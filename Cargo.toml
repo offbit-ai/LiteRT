@@ -22,7 +22,8 @@ litert        = { version = "0.1.0", path = "litert" }
 litert-lm-sys = { version = "0.1.0", path = "litert-lm-sys" }
 litert-lm     = { version = "0.1.0", path = "litert-lm" }
 
-thiserror = "1"
+thiserror   = "1"
+libloading  = "0.8"
 
 # Build-time deps shared by -sys crates
 ureq       = { version = "2", features = ["native-tls"] }

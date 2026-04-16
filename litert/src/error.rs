@@ -1,7 +1,5 @@
 //! Error type for the `litert` crate.
 
-use std::ffi::CStr;
-
 use litert_sys::{self as sys, LiteRtStatus};
 
 use crate::ElementType;
@@ -48,26 +46,62 @@ pub enum Error {
     /// An `std::io` error occurred (e.g., reading a model file).
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// A requested feature is not available in the current `libLiteRt` build.
+    ///
+    /// The wrapped `&'static str` names the missing capability (e.g.,
+    /// `"logger-control symbols"`).
+    #[error("unsupported: {0}")]
+    Unsupported(&'static str),
 }
 
 /// Converts a raw `LiteRtStatus` into `Result<()>`.
 ///
-/// Formats the error message using `LiteRtGetStatusString` so callers get a
-/// meaningful description without needing to match on numeric codes.
+/// Formats the error message from an in-crate lookup table rather than the
+/// runtime's `LiteRtGetStatusString`, because that symbol isn't exported on
+/// every target. Values that fall outside the known set get a generic label.
 pub(crate) fn check(status: LiteRtStatus) -> Result<()> {
     if status == sys::kLiteRtStatusOk {
         return Ok(());
     }
-    let message = unsafe {
-        let ptr = sys::LiteRtGetStatusString(status);
-        if ptr.is_null() {
-            String::from("(no description)")
-        } else {
-            CStr::from_ptr(ptr).to_string_lossy().into_owned()
-        }
-    };
     Err(Error::Status {
         code: status,
-        message,
+        message: status_message(status).to_string(),
     })
+}
+
+fn status_message(status: LiteRtStatus) -> &'static str {
+    match status {
+        sys::kLiteRtStatusErrorInvalidArgument => "invalid argument",
+        sys::kLiteRtStatusErrorMemoryAllocationFailure => "memory allocation failure",
+        sys::kLiteRtStatusErrorRuntimeFailure => "runtime failure",
+        sys::kLiteRtStatusErrorMissingInputTensor => "missing input tensor",
+        sys::kLiteRtStatusErrorUnsupported => "unsupported",
+        sys::kLiteRtStatusErrorNotFound => "not found",
+        sys::kLiteRtStatusErrorTimeoutExpired => "timeout expired",
+        sys::kLiteRtStatusErrorWrongVersion => "wrong version",
+        sys::kLiteRtStatusErrorUnknown => "unknown error",
+        sys::kLiteRtStatusErrorAlreadyExists => "already exists",
+        sys::kLiteRtStatusCancelled => "cancelled",
+        sys::kLiteRtStatusErrorFileIO => "file I/O error",
+        sys::kLiteRtStatusErrorInvalidFlatbuffer => "invalid flatbuffer",
+        sys::kLiteRtStatusErrorDynamicLoading => "dynamic loading error",
+        sys::kLiteRtStatusErrorSerialization => "serialization error",
+        sys::kLiteRtStatusErrorCompilation => "compilation error",
+        sys::kLiteRtStatusErrorIndexOOB => "index out of bounds",
+        sys::kLiteRtStatusErrorInvalidIrType => "invalid IR type",
+        sys::kLiteRtStatusErrorInvalidGraphInvariant => "invalid graph invariant",
+        sys::kLiteRtStatusErrorGraphModification => "graph modification error",
+        sys::kLiteRtStatusErrorInvalidToolConfig => "invalid tool config",
+        sys::kLiteRtStatusLegalizeNoMatch => "legalization: no match",
+        sys::kLiteRtStatusErrorInvalidLegalization => "invalid legalization",
+        sys::kLiteRtStatusPatternNoMatch => "pattern: no match",
+        sys::kLiteRtStatusInvalidTransformation => "invalid transformation",
+        sys::kLiteRtStatusErrorUnsupportedRuntimeVersion => "unsupported runtime version",
+        sys::kLiteRtStatusErrorUnsupportedCompilerVersion => "unsupported compiler version",
+        sys::kLiteRtStatusErrorIncompatibleByteCodeVersion => "incompatible bytecode version",
+        sys::kLiteRtStatusErrorUnsupportedOpShapeInferer => "unsupported op shape inferer",
+        sys::kLiteRtStatusErrorShapeInferenceFailed => "shape inference failed",
+        _ => "unrecognized status code",
+    }
 }

@@ -18,14 +18,18 @@ passthrough = [
 
 # ---------- Linux ----------
 
+# Retry wrapper: the Ubuntu archive mirrors used by cross's default Android
+# images return transient ECONNREFUSED for individual package fetches; a
+# naked `apt-get install` aborts the entire image build. `apt-retry` keeps
+# hitting the mirror up to 5 times before giving up.
 [target.x86_64-unknown-linux-gnu]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+    "for i in 1 2 3 4 5; do apt-get update && apt-get install -y --no-install-recommends --fix-missing libclang-dev clang && break || { echo 'apt attempt '$i' failed; retrying…' ; sleep 10; }; done",
 ]
 
 [target.aarch64-unknown-linux-gnu]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+    "for i in 1 2 3 4 5; do apt-get update && apt-get install -y --no-install-recommends --fix-missing libclang-dev clang && break || { echo 'apt attempt '$i' failed; retrying…' ; sleep 10; }; done",
 ]
 
 # ---------- Android ----------
@@ -34,10 +38,10 @@ pre-build = [
 
 [target.aarch64-linux-android]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+    "for i in 1 2 3 4 5; do apt-get update && apt-get install -y --no-install-recommends --fix-missing libclang-dev clang && break || { echo 'apt attempt '$i' failed; retrying…' ; sleep 10; }; done",
 ]
 
 [target.x86_64-linux-android]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+    "for i in 1 2 3 4 5; do apt-get update && apt-get install -y --no-install-recommends --fix-missing libclang-dev clang && break || { echo 'apt attempt '$i' failed; retrying…' ; sleep 10; }; done",
 ]

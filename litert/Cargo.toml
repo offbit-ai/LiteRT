@@ -12,3 +12,4 @@ authors.workspace      = true
 [dependencies]
 litert-sys = { workspace = true }
 thiserror  = { workspace = true }
+libloading = { workspace = true }
