@@ -45,6 +45,13 @@ impl Model {
     /// Returns [`Error::InvalidPath`] if the path contains non-UTF-8 bytes,
     /// or [`Error::Status`](crate::Error::Status) if LiteRT cannot parse the
     /// file.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let model = litert::Model::from_file("mobilenet_v1.tflite")?;
+    /// # Ok::<(), litert::Error>(())
+    /// ```
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let path_str = path
@@ -72,6 +79,14 @@ impl Model {
     ///
     /// Returns [`Error::Status`](crate::Error::Status) if the bytes don't
     /// form a valid serialized model.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let bytes = std::fs::read("mobilenet_v1.tflite")?;
+    /// let model = litert::Model::from_bytes(bytes)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn from_bytes(bytes: impl Into<Box<[u8]>>) -> Result<Self> {
         let bytes: Box<[u8]> = bytes.into();
         let mut raw: sys::LiteRtModel = std::ptr::null_mut();

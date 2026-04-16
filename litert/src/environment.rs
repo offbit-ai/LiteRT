@@ -31,6 +31,13 @@ impl Environment {
     ///
     /// Returns [`Error::Status`](crate::Error::Status) if LiteRT reports an
     /// initialisation failure.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let env = litert::Environment::new()?;
+    /// # Ok::<(), litert::Error>(())
+    /// ```
     pub fn new() -> Result<Self> {
         let mut raw: sys::LiteRtEnvironment = std::ptr::null_mut();
         check(unsafe { sys::LiteRtCreateEnvironment(0, std::ptr::null(), &mut raw) })?;

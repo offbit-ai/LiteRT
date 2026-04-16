@@ -73,6 +73,17 @@ impl TensorBuffer {
     /// # Errors
     ///
     /// Returns [`Error::Status`](crate::Error::Status) if allocation fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use litert::{ElementType, Environment, TensorBuffer, TensorShape};
+    ///
+    /// let env = Environment::new()?;
+    /// let shape = TensorShape { element_type: ElementType::Float32, dims: vec![1, 4] };
+    /// let buffer = TensorBuffer::managed_host(&env, &shape)?;
+    /// # Ok::<(), litert::Error>(())
+    /// ```
     pub fn managed_host(env: &Environment, shape: &TensorShape) -> Result<Self> {
         let raw_type = shape.to_raw();
         let element_size = element_size_bytes(shape.element_type).unwrap_or(0);
@@ -123,6 +134,17 @@ impl TensorBuffer {
     /// - [`Error::UnalignedBufferSize`] if the byte size isn't a whole number
     ///   of `T` values.
     /// - [`Error::Status`](crate::Error::Status) on runtime failure.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use litert::TensorBuffer;
+    /// # fn demo(buffer: &TensorBuffer) -> litert::Result<()> {
+    /// let guard = buffer.lock_for_read::<f32>()?;
+    /// let first_three: &[f32] = &guard[..3];
+    /// # let _ = first_three;
+    /// # Ok(()) }
+    /// ```
     pub fn lock_for_read<T: TensorElement>(&self) -> Result<ReadGuard<'_, T>> {
         let (ptr, len) = self.lock::<T>(sys::kLiteRtTensorBufferLockModeRead)?;
         Ok(ReadGuard {
@@ -138,6 +160,16 @@ impl TensorBuffer {
     /// # Errors
     ///
     /// See [`Self::lock_for_read`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use litert::TensorBuffer;
+    /// # fn demo(buffer: &mut TensorBuffer) -> litert::Result<()> {
+    /// let mut guard = buffer.lock_for_write::<f32>()?;
+    /// guard.copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
+    /// # Ok(()) }
+    /// ```
     pub fn lock_for_write<T: TensorElement>(&mut self) -> Result<WriteGuard<'_, T>> {
         let (ptr, len) = self.lock::<T>(sys::kLiteRtTensorBufferLockModeWrite)?;
         Ok(WriteGuard {

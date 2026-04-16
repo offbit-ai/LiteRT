@@ -55,6 +55,16 @@ impl LogSeverity {
 ///
 /// Returns [`Error::Status`](crate::Error::Status) if the underlying call
 /// fails (generally impossible — the default logger always exists).
+///
+/// # Example
+///
+/// ```no_run
+/// use litert::{set_global_log_severity, LogSeverity};
+///
+/// // Silence everything below error level.
+/// set_global_log_severity(LogSeverity::Error)?;
+/// # Ok::<(), litert::Error>(())
+/// ```
 pub fn set_global_log_severity(severity: LogSeverity) -> Result<()> {
     let logger = unsafe { sys::LiteRtGetDefaultLogger() };
     if logger.is_null() {

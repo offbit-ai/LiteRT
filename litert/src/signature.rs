@@ -11,6 +11,17 @@ use crate::{check, Error, Model, Result, TensorShape};
 ///
 /// Holds a clone of the source [`Model`] to keep the underlying C object
 /// alive while the signature handle is used.
+///
+/// # Example
+///
+/// ```no_run
+/// let model = litert::Model::from_file("model.tflite")?;
+/// let sig = model.signature(0)?;
+/// for i in 0..sig.input_count()? {
+///     println!("input {i}: {:?}", sig.input_shape(i)?);
+/// }
+/// # Ok::<(), litert::Error>(())
+/// ```
 #[derive(Clone)]
 pub struct Signature {
     ptr: NonNull<sys::LiteRtSignatureT>,

@@ -75,6 +75,16 @@ impl CompilationOptions {
     /// Returns [`Error::NullPointer`](crate::Error::NullPointer) if the C API
     /// refused to allocate, or [`Error::Status`](crate::Error::Status) if the
     /// runtime reported a failure.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use litert::{Accelerators, CompilationOptions};
+    ///
+    /// let options = CompilationOptions::new()?
+    ///     .with_accelerators(Accelerators::GPU | Accelerators::CPU)?;
+    /// # Ok::<(), litert::Error>(())
+    /// ```
     pub fn new() -> Result<Self> {
         let mut raw: sys::LiteRtOptions = std::ptr::null_mut();
         check(unsafe { sys::LiteRtCreateOptions(&mut raw) })?;

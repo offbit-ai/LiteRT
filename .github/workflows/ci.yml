@@ -46,6 +46,12 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: cargo doc
+        if: runner.os == 'Linux'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --exclude xtask
+
       - name: cargo test
         if: matrix.run-tests
         run: cargo test --workspace --exclude xtask --target ${{ matrix.target }}

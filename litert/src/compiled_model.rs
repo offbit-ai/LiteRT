@@ -51,6 +51,17 @@ impl CompiledModel {
     /// Returns [`Error::Status`](crate::Error::Status) if compilation fails
     /// — commonly because the requested accelerator is unavailable, or
     /// because the model uses an op the selected backend doesn't support.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use litert::{CompilationOptions, CompiledModel, Environment, Model};
+    ///
+    /// let env = Environment::new()?;
+    /// let model = Model::from_file("model.tflite")?;
+    /// let compiled = CompiledModel::new(env, model, &CompilationOptions::new()?)?;
+    /// # Ok::<(), litert::Error>(())
+    /// ```
     pub fn new(env: Environment, model: Model, options: &CompilationOptions) -> Result<Self> {
         let mut raw: sys::LiteRtCompiledModel = std::ptr::null_mut();
         check(unsafe {
@@ -83,6 +94,19 @@ impl CompiledModel {
     ///
     /// Returns [`Error::Status`](crate::Error::Status) if LiteRT rejects the
     /// buffers or encounters a runtime failure.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use litert::{CompiledModel, TensorBuffer};
+    /// # fn demo(
+    /// #     compiled: &CompiledModel,
+    /// #     inputs: &mut [TensorBuffer],
+    /// #     outputs: &mut [TensorBuffer],
+    /// # ) -> litert::Result<()> {
+    /// compiled.run(inputs, outputs)?;
+    /// # Ok(()) }
+    /// ```
     pub fn run(&self, inputs: &mut [TensorBuffer], outputs: &mut [TensorBuffer]) -> Result<()> {
         self.run_signature(SignatureIndex::DEFAULT, inputs, outputs)
     }
