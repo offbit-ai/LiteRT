@@ -25,8 +25,9 @@ litert-lm     = { version = "0.1.0", path = "litert-lm" }
 thiserror   = "1"
 libloading  = "0.8"
 
-# Build-time deps shared by -sys crates
-ureq       = { version = "2", features = ["native-tls"] }
+# Build-time deps shared by -sys crates. ureq uses pure-Rust rustls so the
+# build doesn't need libssl-dev (important for cross containers).
+ureq       = { version = "2", default-features = false, features = ["tls"] }
 sha2       = "0.10"
 zip        = "0.6"
 tar        = "0.4"
