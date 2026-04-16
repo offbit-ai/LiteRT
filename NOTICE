@@ -1,0 +1,46 @@
+LiteRT-rs
+Copyright 2026 LiteRT-rs Contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Bundled source (headers) — LiteRT
+--------------------------------------------------------------------------------
+The `third_party/litert-v2.1.4/` directory contains C header files and
+supporting build configuration pinned from:
+
+  LiteRT 2.1.4
+  https://github.com/google-ai-edge/LiteRT
+  Copyright 2024-2026 Google LLC
+
+Licensed under the Apache License, Version 2.0; see
+third_party/litert-v2.1.4/LICENSE for the upstream copy. The Rust FFI bindings
+in `litert-sys/src/bindings/` are machine-generated from these headers via
+bindgen.
+
+--------------------------------------------------------------------------------
+Downloaded prebuilt binaries — LiteRT-LM
+--------------------------------------------------------------------------------
+At build time, `litert-sys` downloads a set of prebuilt shared libraries
+(libLiteRt.{so,dylib,dll} + accelerator plugins) pinned by SHA-256 from:
+
+  LiteRT-LM v0.10.2
+  https://github.com/google-ai-edge/litert-lm
+  Copyright 2024-2026 Google LLC
+
+These binaries are redistributed under the Apache License, Version 2.0. They
+are not bundled inside the published crates; `litert-sys/build.rs` fetches
+them on first build and caches them under `$XDG_CACHE_HOME/litert-sys/`.
+
+For Android targets, the core runtime (`libLiteRt.so`) is additionally fetched
+from the upstream Google Maven artifact:
+
+  com.google.ai.edge.litert:litert:2.1.4
+  https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/
+
+--------------------------------------------------------------------------------
+Third-party Rust crates used at build time
+--------------------------------------------------------------------------------
+The build dependencies (bindgen, ureq, sha2, zip, serde, serde_json, dirs,
+thiserror) are listed in Cargo.toml and pulled from crates.io under their
+respective open-source licenses.
