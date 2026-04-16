@@ -220,8 +220,7 @@ fn emit_bindings(target: &str, out_dir: &Path) {
 #[cfg(feature = "generate-bindings")]
 fn generate_bindings(out_dir: &Path) {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir.parent().expect("workspace root");
-    let headers_dir = repo_root
+    let headers_dir = manifest_dir
         .join("third_party")
         .join(format!("litert-v{LITERT_HEADERS_VERSION}"));
     assert!(

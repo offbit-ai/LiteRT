@@ -10,6 +10,11 @@ include     = [
     "build.rs",
     "wrapper.h",
     "src/**/*.rs",
+    # Vendored LiteRT C API headers — needed only when `generate-bindings`
+    # is active, but shipped alongside so the feature works out of the box.
+    "third_party/**/*.h",
+    "third_party/**/*.h.in",
+    "third_party/**/LICENSE",
 ]
 version.workspace       = true
 edition.workspace       = true
@@ -23,10 +28,9 @@ links       = "LiteRt"
 
 [features]
 default           = []
-# Opt-in for maintainers regenerating bindings from vendored headers.
-# Requires libclang AND the `third_party/litert-v<ver>/` directory at the
-# workspace root (shipped in the git repo, NOT in the crates.io tarball).
-# End users should never need this feature — the crate ships pre-generated
+# Opt-in for maintainers regenerating bindings from the vendored LiteRT C
+# API headers under `third_party/litert-v<ver>/`. Requires libclang at
+# build time. End users don't need this — the crate ships pre-generated
 # bindings for every supported target under `src/bindings/<target>.rs`.
 generate-bindings = ["dep:bindgen"]
 # Skip emitting `-lLiteRt` — used for `cargo doc` or downstream crates that
