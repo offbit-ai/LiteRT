@@ -1,5 +1,13 @@
 # LiteRT-rs
 
+[![CI](https://github.com/offbit-ai/LiteRT/actions/workflows/ci.yml/badge.svg)](https://github.com/offbit-ai/LiteRT/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/litert.svg?label=litert)](https://crates.io/crates/litert)
+[![crates.io](https://img.shields.io/crates/v/litert-sys.svg?label=litert-sys)](https://crates.io/crates/litert-sys)
+[![docs.rs](https://img.shields.io/docsrs/litert?label=docs.rs%2Flitert)](https://docs.rs/litert)
+[![MSRV](https://img.shields.io/badge/rustc-1.75%2B-blue.svg)](https://releases.rs/docs/1.75.0/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-informational.svg)](LICENSE)
+[![LiteRT](https://img.shields.io/badge/LiteRT-2.1.4-informational.svg)](https://github.com/google-ai-edge/LiteRT)
+
 Safe, zero-friction Rust bindings for [Google LiteRT] 2.x — the on-device
 machine-learning runtime formerly known as TensorFlow Lite. Add the crate to
 your `Cargo.toml` and `cargo build`. No Bazel, no CMake, no `libclang` on
