@@ -1,0 +1,15 @@
+[package]
+name        = "litert-lm"
+description = "Safe, idiomatic Rust bindings to Google's LiteRT-LM on-device LLM engine."
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+litert        = { workspace = true }
+litert-lm-sys = { workspace = true }
+thiserror     = { workspace = true }

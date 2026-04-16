@@ -1,0 +1,213 @@
+; Copyright 2025 Google LLC.
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;      http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
+; Exports symbols from C API DLL or executables when C API is statically linked.
+; The list of symbols here doesn't cover all symbols of C API, but added as
+; needed when linker fails to find symbols. Currently, they are used by
+; litert_lm_main.exe when --define=litert_link_capi_so=true and by
+; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
+
+EXPORTS
+  LiteRtAddCustomOpKernelOption
+  LiteRtAddEnvironmentOptions
+  LiteRtAddExternalTensorBinding
+  LiteRtAddModelMetadata
+  LiteRtAddOpaqueOptions
+  LiteRtAppendOpaqueOptions
+  LiteRtClearTensorBuffer
+  LiteRtClearTensorBufferEvent
+  LiteRtCompiledModelClearErrors
+  LiteRtCompiledModelGetDispatchAnnotation
+  LiteRtCompiledModelGetErrorMessages
+  LiteRtCompiledModelGetProfiler
+  LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelRemoveDispatchAnnotation
+  LiteRtCompiledModelReportError
+  LiteRtCompiledModelResizeInputTensor
+  LiteRtCompiledModelResizeInputTensorNonStrict
+  LiteRtCompiledModelSetDispatchAnnotation
+  LiteRtCompiledModelSetSchedulingInfo
+  LiteRtCompiledModelStartMetricsCollection
+  LiteRtCompiledModelStopMetricsCollection
+  LiteRtCreateAccelerator
+  LiteRtCreateCompiledModel
+  LiteRtCreateEnvironment
+  LiteRtCreateEventFromEglSyncFence
+  LiteRtCreateEventFromOpenClEvent
+  LiteRtCreateEventFromSyncFenceFd
+  LiteRtCreateManagedEvent
+  LiteRtCreateManagedTensorBuffer
+  LiteRtCreateManagedTensorBufferFromRequirements
+  LiteRtCreateMetrics
+  LiteRtCreateModelFromBuffer
+  LiteRtCreateModelFromFile
+  LiteRtCreateOpaqueOptions
+  LiteRtCreateOptions
+  LiteRtCreateTensorBufferFromAhwb
+  LiteRtCreateTensorBufferFromDmaBufBuffer
+  LiteRtCreateTensorBufferFromFastRpcBuffer
+  LiteRtCreateTensorBufferFromGlBuffer
+  LiteRtCreateTensorBufferFromGlTexture
+  LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromIonBuffer
+  LiteRtCreateTensorBufferFromMetalMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
+  LiteRtCreateTensorBufferFromWebGpuBuffer
+  LiteRtCreateTensorBufferFromWebGpuTexture
+  LiteRtCreateTensorBufferRequirements
+  LiteRtCreateTensorBufferRequirementsWithAlignment
+  LiteRtDestroyCompiledModel
+  LiteRtDestroyEnvironment
+  LiteRtDestroyEvent
+  LiteRtDestroyMetrics
+  LiteRtDestroyModel
+  LiteRtDestroyOpaqueOptions
+  LiteRtDestroyOptions
+  LiteRtDestroyTensorBuffer
+  LiteRtDestroyTensorBufferRequirements
+  LiteRtDupFdEvent
+  LiteRtDuplicateTensorBuffer
+  LiteRtEnvironmentHasGpuEnvironment
+  LiteRtEnvironmentSupportsAhwbClInterop
+  LiteRtEnvironmentSupportsAhwbGlInterop
+  LiteRtEnvironmentSupportsClGlInterop
+  LiteRtExternalLiteRtBufferContextCreateBufferForTensor
+  LiteRtExternalLiteRtBufferContextGetEnvironment
+  LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode
+  LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
+  LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
+  LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
+  LiteRtFindOpaqueOptionsData
+  LiteRtGetAcceleratorEnvironment
+  LiteRtGetCompiledModelEnvironment
+  LiteRtGetCompiledModelInputBufferRequirements
+  LiteRtGetCompiledModelInputTensorLayout
+  LiteRtGetCompiledModelOutputBufferRequirements
+  LiteRtGetCompiledModelOutputTensorLayouts
+  LiteRtGetEnvironmentOptions
+  LiteRtGetEnvironmentOptionsValue
+  LiteRtGetEventCustomNativeEvent
+  LiteRtGetEventEglSync
+  LiteRtGetEventEventType
+  LiteRtGetEventOpenClEvent
+  LiteRtGetEventSyncFenceFd
+  LiteRtGetExternalLiteRtBufferContextTensorBuffer
+  LiteRtGetMainModelSubgraphIndex
+  LiteRtGetMetric
+  LiteRtGetModelMetadata
+  LiteRtGetModelSignature
+  LiteRtGetModelSubgraph
+  LiteRtGetNextOpaqueOptions
+  LiteRtGetNumMetrics
+  LiteRtGetNumModelSignatures
+  LiteRtGetNumModelSubgraphs
+  LiteRtGetNumOpInputs
+  LiteRtGetNumOpOutputs
+  LiteRtGetNumSignatureInputs
+  LiteRtGetNumSignatureOutputs
+  LiteRtGetNumSubgraphInputs
+  LiteRtGetNumSubgraphOps
+  LiteRtGetNumSubgraphOutputs
+  LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
+  LiteRtGetNumTensorUses
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
+  LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsData
+  LiteRtGetOpaqueOptionsHash
+  LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOptionsHardwareAccelerators
+  LiteRtGetPerChannelQuantization
+  LiteRtGetPerTensorQuantization
+  LiteRtGetQuantizationTypeId
+  LiteRtGetRankedTensorType
+  LiteRtGetSignatureInputName
+  LiteRtGetSignatureInputTensor
+  LiteRtGetSignatureInputTensorByIndex
+  LiteRtGetSignatureKey
+  LiteRtGetSignatureOutputName
+  LiteRtGetSignatureOutputTensor
+  LiteRtGetSignatureOutputTensorByIndex
+  LiteRtGetSignatureSubgraph
+  LiteRtGetSubgraphInput
+  LiteRtGetSubgraphOp
+  LiteRtGetSubgraphOutput
+  LiteRtGetTensorBufferAhwb
+  LiteRtGetTensorBufferCustomTensorBufferHandle
+  LiteRtGetTensorBufferDmaBufBuffer
+  LiteRtGetTensorBufferEvent
+  LiteRtGetTensorBufferFastRpcBuffer
+  LiteRtGetTensorBufferGlBuffer
+  LiteRtGetTensorBufferGlTexture
+  LiteRtGetTensorBufferHostMemory
+  LiteRtGetTensorBufferIonBuffer
+  LiteRtGetTensorBufferMetalMemory
+  LiteRtGetTensorBufferOffset
+  LiteRtGetTensorBufferOpenClMemory
+  LiteRtGetTensorBufferPackedSize
+  LiteRtGetTensorBufferRegistry
+  LiteRtGetTensorBufferRequirementsAlignment
+  LiteRtGetTensorBufferRequirementsBufferSize
+  LiteRtGetTensorBufferRequirementsStrides
+  LiteRtGetTensorBufferRequirementsSupportedTensorBufferType
+  LiteRtGetTensorBufferSize
+  LiteRtGetTensorBufferTensorType
+  LiteRtGetTensorBufferType
+  LiteRtGetTensorBufferVulkanMemory
+  LiteRtGetTensorBufferWebGpuBuffer
+  LiteRtGetTensorDefiningOp
+  LiteRtGetTensorIndex
+  LiteRtGetTensorName
+  LiteRtGetTensorTypeId
+  LiteRtGetTensorUse
+  LiteRtGetTensorWeights
+  LiteRtGetUnrankedTensorType
+  LiteRtGetWeightsBytes
+  LiteRtGpuEnvironmentCreate
+  LiteRtHasTensorBufferEvent
+  LiteRtIsEventSignaled
+  LiteRtJoinTensorBufferRequirements
+  LiteRtLockTensorBuffer
+  LiteRtPopOpaqueOptions
+  LiteRtPushOp
+  LiteRtRegisterAccelerator
+  LiteRtRegisterTensorBufferHandlers
+  LiteRtRunCompiledModel
+  LiteRtRunCompiledModelAsync
+  LiteRtRunCompiledModelAsyncWithOptions
+  LiteRtRunCompiledModelAsyncWithSchedulingInfo
+  LiteRtRunCompiledModelWithOptions
+  LiteRtRunCompiledModelWithSchedulingInfo
+  LiteRtSamsungOptionsCreate
+  LiteRtSamsungOptionsGet
+  LiteRtSamsungOptionsGetIdentifier
+  LiteRtSerializeModel
+  LiteRtSerializeModelWithSignatures
+  LiteRtSetAcceleratorGetHardwareSupport
+  LiteRtSetAcceleratorGetName
+  LiteRtSetAcceleratorGetVersion
+  LiteRtSetCompiledModelCancellationFunction
+  LiteRtSetCustomEvent
+  LiteRtSetDelegateFunction
+  LiteRtSetEnvironmentOptionsValue
+  LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
+  LiteRtSetOpaqueOptionsHash
+  LiteRtSetOptionsHardwareAccelerators
+  LiteRtSetTensorBufferEvent
+  LiteRtSignalEvent
+  LiteRtUnlockTensorBuffer
+  LiteRtUnwrapDelegate
+  LiteRtWaitEvent
+  LiteRtWrapDelegate

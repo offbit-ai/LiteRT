@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "litert-sys",
+    "litert",
+    "litert-lm-sys",
+    "litert-lm",
+]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.75"
+license      = "Apache-2.0"
+repository   = "https://github.com/google-ai-edge-mirrors/litert-rs"
+authors      = ["LiteRT-RS Contributors"]
+
+[workspace.dependencies]
+litert-sys    = { version = "0.1.0", path = "litert-sys" }
+litert        = { version = "0.1.0", path = "litert" }
+litert-lm-sys = { version = "0.1.0", path = "litert-lm-sys" }
+litert-lm     = { version = "0.1.0", path = "litert-lm" }
+
+thiserror = "1"
+
+# Build-time deps shared by -sys crates
+ureq       = { version = "2", features = ["native-tls"] }
+sha2       = "0.10"
+zip        = "0.6"
+tar        = "0.4"
+flate2     = "1"
+dirs       = "5"
+bindgen    = "0.69"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto           = "thin"
+codegen-units = 1

@@ -1,0 +1,19 @@
+[package]
+name        = "litert-lm-sys"
+description = "Raw FFI bindings to Google's LiteRT-LM on-device LLM engine C API."
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+# Deferred to 0.2.0 — see internal/Spec.md. No prebuilt shared library exists
+# upstream; distribution requires us to build from source and mirror.
+
+[features]
+default           = []
+generate-bindings = ["dep:bindgen"]
+
+[build-dependencies]
+bindgen = { workspace = true, optional = true }

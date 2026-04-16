@@ -1,0 +1,14 @@
+[package]
+name        = "litert"
+description = "Safe, idiomatic Rust bindings to Google's LiteRT (TFLite) on-device ML runtime."
+build       = "build.rs"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+litert-sys = { workspace = true }
+thiserror  = { workspace = true }
