@@ -1,17 +1,33 @@
 [package]
 name        = "litert-sys"
 description = "Raw FFI bindings to Google's LiteRT (TFLite) C API."
-version.workspace      = true
-edition.workspace      = true
-rust-version.workspace = true
-license.workspace      = true
-repository.workspace   = true
-authors.workspace      = true
+readme      = "README.md"
+keywords    = ["litert", "tflite", "tensorflow", "bindings", "ffi"]
+categories  = ["external-ffi-bindings", "science"]
+include     = [
+    "Cargo.toml",
+    "README.md",
+    "build.rs",
+    "wrapper.h",
+    "src/**/*.rs",
+]
+version.workspace       = true
+edition.workspace       = true
+rust-version.workspace  = true
+license.workspace       = true
+repository.workspace    = true
+homepage.workspace      = true
+documentation.workspace = true
+authors.workspace       = true
 links       = "LiteRt"
 
 [features]
 default           = []
-# Opt-in for maintainers regenerating bindings from vendored headers. Requires libclang.
+# Opt-in for maintainers regenerating bindings from vendored headers.
+# Requires libclang AND the `third_party/litert-v<ver>/` directory at the
+# workspace root (shipped in the git repo, NOT in the crates.io tarball).
+# End users should never need this feature — the crate ships pre-generated
+# bindings for every supported target under `src/bindings/<target>.rs`.
 generate-bindings = ["dep:bindgen"]
 # Skip emitting `-lLiteRt` — used for `cargo doc` or downstream crates that
 # link LiteRt via a different manifest entry.

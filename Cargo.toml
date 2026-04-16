@@ -9,12 +9,17 @@ members = [
 ]
 
 [workspace.package]
-version      = "0.1.0"
-edition      = "2021"
-rust-version = "1.75"
-license      = "Apache-2.0"
-repository   = "https://github.com/google-ai-edge-mirrors/litert-rs"
-authors      = ["LiteRT-RS Contributors"]
+version       = "0.1.0"
+edition       = "2021"
+rust-version  = "1.75"
+license       = "Apache-2.0"
+repository    = "https://github.com/offbit-ai/LiteRT"
+homepage      = "https://github.com/offbit-ai/LiteRT"
+documentation = "https://docs.rs/litert"
+authors       = ["LiteRT-rs Contributors"]
+readme        = "README.md"
+keywords      = ["litert", "tflite", "tensorflow", "ml", "inference"]
+categories    = ["api-bindings", "science"]
 
 [workspace.dependencies]
 litert-sys    = { version = "0.1.0", path = "litert-sys" }

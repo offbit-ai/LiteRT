@@ -2,12 +2,26 @@
 name        = "litert"
 description = "Safe, idiomatic Rust bindings to Google's LiteRT (TFLite) on-device ML runtime."
 build       = "build.rs"
-version.workspace      = true
-edition.workspace      = true
-rust-version.workspace = true
-license.workspace      = true
-repository.workspace   = true
-authors.workspace      = true
+readme      = "README.md"
+keywords    = ["litert", "tflite", "tensorflow", "ml", "inference"]
+categories  = ["api-bindings", "science"]
+include     = [
+    "Cargo.toml",
+    "README.md",
+    "build.rs",
+    "src/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "tests/data/*.tflite",
+]
+version.workspace       = true
+edition.workspace       = true
+rust-version.workspace  = true
+license.workspace       = true
+repository.workspace    = true
+homepage.workspace      = true
+documentation.workspace = true
+authors.workspace       = true
 
 [dependencies]
 litert-sys = { workspace = true }

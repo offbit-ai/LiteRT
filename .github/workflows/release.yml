@@ -1,0 +1,50 @@
+name: Release
+
+# Triggered by pushing a tag shaped `v*` (e.g. `v0.1.0`, `v0.2.1`).
+# Publishes litert-sys first, waits for crates.io to index it, then
+# publishes litert. Both crates must share the same version — the tag.
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Re-verify on the exact commit the tag points at before publishing.
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: assert tag matches workspace version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG=$(grep -E '^version *= *"[0-9.]+"' Cargo.toml | head -1 | sed -E 's/.*"([0-9.]+)".*/\1/')
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag ($TAG) != workspace.package.version ($PKG)"
+            exit 1
+          fi
+
+      - name: cargo publish litert-sys
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p litert-sys
+
+      # Give crates.io's search index a moment to pick up the new version
+      # before litert's dependency resolution runs against it.
+      - name: wait for index propagation
+        run: sleep 30
+
+      - name: cargo publish litert
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p litert
