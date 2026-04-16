@@ -82,11 +82,40 @@ fn print_help() {
 
 fn regen_bindings(args: &[String]) -> Result<(), String> {
     let targets = parse_target_arg(args)?;
+    let host = host_target();
     for target in targets {
+        if !is_reachable_from(host, target) {
+            println!(
+                "== skip {target} (unreachable from host `{host}`; regen on a matching host) =="
+            );
+            continue;
+        }
         println!("== regen-bindings {target} ==");
         regen_one(target)?;
     }
     Ok(())
+}
+
+/// A foreign target is "reachable" from a host only when cross-rs (or a
+/// cross-compile toolchain) can produce bindings for it there. In practice:
+///
+///   * Host target is always reachable (native cargo).
+///   * macOS targets require a macOS host (no osxcross image in cross-rs).
+///   * Windows MSVC targets require a Windows host (no xwin wired up yet).
+///   * Linux + Android targets are reachable from any Linux host via cross.
+fn is_reachable_from(host: &str, target: &str) -> bool {
+    if host == target {
+        return true;
+    }
+    if target.contains("apple") {
+        return host.contains("apple");
+    }
+    if target.contains("windows") {
+        return host.contains("windows");
+    }
+    // Linux + Android: reachable from any Linux-family host, and from macOS
+    // if the user has docker + a linux cross image installed.
+    true
 }
 
 fn regen_one(target: &str) -> Result<(), String> {
@@ -106,6 +135,16 @@ fn regen_one(target: &str) -> Result<(), String> {
             .args(["--target", target]);
         if let Ok(libclang) = find_libclang() {
             c.env("LIBCLANG_PATH", libclang);
+        }
+        // Ubuntu (and Debian derivatives) ship glibc headers in a multi-arch
+        // directory that bindgen's default include path doesn't find. If we
+        // detect that layout, point clang at it explicitly.
+        if let Some(extra) = bindgen_multiarch_clang_arg(host) {
+            let combined = match env::var("BINDGEN_EXTRA_CLANG_ARGS") {
+                Ok(existing) if !existing.is_empty() => format!("{existing} {extra}"),
+                _ => extra,
+            };
+            c.env("BINDGEN_EXTRA_CLANG_ARGS", combined);
         }
         c
     } else {
@@ -247,6 +286,21 @@ fn host_target() -> &'static str {
         // Unknown host — treat every target as foreign and route through cross.
         "unknown"
     }
+}
+
+/// Returns an `-I…` fragment pointing at the host's multi-arch glibc headers
+/// if they exist, or `None` when the platform either doesn't need them
+/// (macOS, Windows) or doesn't have them at the expected path.
+fn bindgen_multiarch_clang_arg(host: &str) -> Option<String> {
+    let include_dir = match host {
+        "x86_64-unknown-linux-gnu" => Path::new("/usr/include/x86_64-linux-gnu"),
+        "aarch64-unknown-linux-gnu" => Path::new("/usr/include/aarch64-linux-gnu"),
+        _ => return None,
+    };
+    include_dir
+        .join("bits/libc-header-start.h")
+        .exists()
+        .then(|| format!("-I{}", include_dir.display()))
 }
 
 fn find_libclang() -> Result<String, env::VarError> {

@@ -13,3 +13,8 @@ authors.workspace      = true
 litert-sys = { workspace = true }
 thiserror  = { workspace = true }
 libloading = { workspace = true }
+
+[dev-dependencies]
+ureq   = { workspace = true }
+tar    = { workspace = true }
+flate2 = { workspace = true }
