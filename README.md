@@ -81,6 +81,38 @@ it's deferred until a mirrored build-and-package pipeline exists.
 | `LITERT_NO_DOWNLOAD`  | Fail the build if any prebuilt is missing from cache (air-gapped CI).     |
 | `LITERT_CACHE_DIR`    | Override the cache root. Default: `$XDG_CACHE_HOME/litert-sys`.           |
 
+## macOS downstream binaries (one-time setup)
+
+The prebuilt `libLiteRt.dylib` Google ships has `install_name=@rpath/libLiteRt.dylib`
+and wasn't linked with `-headerpad_max_install_names`, so we can't rewrite that
+identifier to an absolute path post-download. `litert-sys`' build script emits
+an `-rpath` flag for its own tests and examples, but Cargo's `rustc-link-arg`
+does **not** propagate to downstream consumer binaries. Without action, the
+binaries your crate produces on macOS will fail at launch with:
+
+    dyld: Library not loaded: @rpath/libLiteRt.dylib
+
+Fix it once per downstream crate — add this tiny [build.rs](https://doc.rust-lang.org/cargo/reference/build-scripts.html)
+next to your `Cargo.toml`:
+
+```rust
+// build.rs
+fn main() {
+    // `litert-sys` declares `links = "LiteRt"` and publishes its cache
+    // directory as `DEP_LITERT_LIB_DIR`. Embedding it as an rpath makes
+    // dyld find libLiteRt.dylib without DYLD_LIBRARY_PATH.
+    if let Ok(dir) = std::env::var("DEP_LITERT_LIB_DIR") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+    }
+}
+```
+
+Alternatively, prefix individual invocations with
+`DYLD_LIBRARY_PATH=$(cargo xtask cache-dir)`, or link with
+`RUSTFLAGS="-C link-arg=-Wl,-rpath,/path/to/cache"`.
+
+Linux, Windows, and Android are unaffected.
+
 ## Cross-platform development
 
 End users only need `cargo`. The sections below are for contributors who want

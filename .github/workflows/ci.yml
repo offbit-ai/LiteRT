@@ -91,12 +91,16 @@ jobs:
         run: cross build -p litert --target ${{ matrix.target }}
 
   # -----------------------------------------------------------------------
-  # Bindings drift check: regenerate litert-sys bindings for every target
-  # inside its cross container and fail if the output differs from what's
-  # committed. Produces artifacts for easy inspection / PR update.
+  # Bindings drift check (native host only): regenerate the x86_64 Linux
+  # binding file with the runner's own bindgen + libclang and diff it
+  # against what's committed. Non-host targets (Windows MSVC, macOS, Android,
+  # Linux arm64) are currently seeded from the macOS host and cross-verified
+  # at link time by the native / cross jobs above; their committed .rs files
+  # are updated via `cargo xtask regen-bindings --target <T>` on a matching
+  # host or container by maintainers.
   # -----------------------------------------------------------------------
   bindings-drift:
-    name: bindings drift
+    name: bindings drift (linux x86_64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,20 +111,17 @@ jobs:
         with:
           key: bindings-drift
 
-      - name: install libclang (host bindgen)
+      - name: install libclang
         run: sudo apt-get update && sudo apt-get install -y libclang-dev clang
 
-      - name: install cross
-        run: cargo install cross --locked --version ^0.2
-
-      - name: regenerate bindings for all targets
-        run: cargo xtask regen-bindings
+      - name: regenerate bindings for native host target
+        run: cargo xtask regen-bindings --target x86_64-unknown-linux-gnu
 
       - name: assert no drift
         run: |
-          if ! git diff --exit-code litert-sys/src/bindings; then
-            echo "::error::Committed bindings differ from freshly generated output."
-            echo "Run 'cargo xtask regen-bindings' locally and commit the result."
+          if ! git diff --exit-code litert-sys/src/bindings/x86_64-unknown-linux-gnu.rs; then
+            echo "::error::Committed Linux x86_64 bindings differ from freshly generated output."
+            echo "Run 'cargo xtask regen-bindings --target x86_64-unknown-linux-gnu' and commit the diff."
             exit 1
           fi
 

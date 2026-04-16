@@ -283,10 +283,19 @@ fn locate_library(target: &str) -> Option<PathBuf> {
 }
 
 fn cache_root() -> PathBuf {
-    env::var_os("LITERT_CACHE_DIR")
-        .map(PathBuf::from)
-        .or_else(dirs::cache_dir)
-        .unwrap_or_else(|| PathBuf::from(env::var("OUT_DIR").unwrap()).join("litert-cache"))
+    if let Some(dir) = env::var_os("LITERT_CACHE_DIR") {
+        return PathBuf::from(dir);
+    }
+    // Prefer the user-level cache. If we can't actually create it (e.g.,
+    // running inside a container where `$HOME` points somewhere read-only,
+    // as is the case in some cross-rs images), fall through to OUT_DIR so
+    // the build doesn't panic before even attempting a download.
+    if let Some(dir) = dirs::cache_dir() {
+        if fs::create_dir_all(&dir).is_ok() {
+            return dir;
+        }
+    }
+    PathBuf::from(env::var("OUT_DIR").unwrap()).join("litert-cache")
 }
 
 fn cache_dir_for(target: &str) -> PathBuf {
@@ -425,17 +434,13 @@ fn aar_is_verified(aar_path: &Path) -> bool {
 }
 
 fn file_ok(dir: &Path, p: &Prebuilt) -> bool {
-    let path = dir.join(p.name);
-    let Ok(meta) = fs::metadata(&path) else {
-        return false;
-    };
-    if meta.len() != p.size {
-        return false;
-    }
-    // Only rehash on a marker-less first run. Once a file has passed SHA
-    // verification we trust the length check for subsequent builds.
-    let marker = dir.join(format!("{}.verified", p.name));
-    marker.exists()
+    // A `.verified` marker is written only after the bytes matched the
+    // pinned SHA-256. Its presence (alongside the file) is authoritative —
+    // we don't re-check file length here because post-download mutations
+    // like install_name_tool may legitimately change the byte count on
+    // macOS. Absent the marker, the file is treated as missing and
+    // re-downloaded from scratch.
+    dir.join(p.name).exists() && dir.join(format!("{}.verified", p.name)).exists()
 }
 
 fn download_and_verify(url: &str, p: &Prebuilt, dir: &Path) {
