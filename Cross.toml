@@ -1,0 +1,43 @@
+# Per-target configuration for the `cross` tool.
+#
+# `cargo xtask regen-bindings --target <TRIPLE>` uses cross to run bindgen
+# inside a container image that already ships with libclang + the target
+# sysroot, sparing the contributor any toolchain setup.
+#
+# macOS and Windows targets are NOT configured here; they run natively on
+# their respective CI runners. Cross focuses on Linux + Android.
+
+[build.env]
+# Preserve bindgen / LFS-download env vars across the container boundary.
+passthrough = [
+    "LITERT_CACHE_DIR",
+    "LITERT_LIB_DIR",
+    "LITERT_NO_DOWNLOAD",
+    "LITERT_LOG_LEVEL",
+]
+
+# ---------- Linux ----------
+
+[target.x86_64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+]
+
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+]
+
+# ---------- Android ----------
+# Cross-rs ships NDK-equipped images for these targets. Android binding gen
+# additionally needs libclang for the host architecture of the container.
+
+[target.aarch64-linux-android]
+pre-build = [
+    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+]
+
+[target.x86_64-linux-android]
+pre-build = [
+    "apt-get update && apt-get install -y --no-install-recommends libclang-dev clang",
+]

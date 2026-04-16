@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Native builds (+ tests where the runner matches the target)
+  # -----------------------------------------------------------------------
+  native:
+    name: native ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   target: aarch64-apple-darwin,    run-tests: true  }
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu, run-tests: true  }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,  run-tests: false } # link flow only for now
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: cargo fmt --check
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
+
+      - name: cargo build
+        run: cargo build --workspace --exclude xtask --target ${{ matrix.target }}
+
+      - name: cargo clippy
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        if: matrix.run-tests
+        run: cargo test --workspace --exclude xtask --target ${{ matrix.target }}
+
+  # -----------------------------------------------------------------------
+  # Cross-target builds (Linux arm64 + Android arm64/x86_64) via cross-rs.
+  # These confirm build.rs + linker + committed bindings work under the
+  # real target toolchain. Tests are skipped (Android tests would need
+  # emulator instrumentation).
+  # -----------------------------------------------------------------------
+  cross:
+    name: cross ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - aarch64-linux-android
+          - x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-${{ matrix.target }}
+
+      - name: install cross
+        run: cargo install cross --locked --version ^0.2
+
+      - name: cross build
+        run: cross build -p litert-sys --target ${{ matrix.target }}
+
+      - name: cross build litert
+        run: cross build -p litert --target ${{ matrix.target }}
+
+  # -----------------------------------------------------------------------
+  # Bindings drift check: regenerate litert-sys bindings for every target
+  # inside its cross container and fail if the output differs from what's
+  # committed. Produces artifacts for easy inspection / PR update.
+  # -----------------------------------------------------------------------
+  bindings-drift:
+    name: bindings drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bindings-drift
+
+      - name: install libclang (host bindgen)
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev clang
+
+      - name: install cross
+        run: cargo install cross --locked --version ^0.2
+
+      - name: regenerate bindings for all targets
+        run: cargo xtask regen-bindings
+
+      - name: assert no drift
+        run: |
+          if ! git diff --exit-code litert-sys/src/bindings; then
+            echo "::error::Committed bindings differ from freshly generated output."
+            echo "Run 'cargo xtask regen-bindings' locally and commit the result."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: bindings-regenerated
+          path: litert-sys/src/bindings/

@@ -25,6 +25,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const LITERT_LM_TAG: &str = "v0.10.2";
+const LITERT_MAVEN_VERSION: &str = "2.1.4";
 
 #[cfg(feature = "generate-bindings")]
 const LITERT_HEADERS_VERSION: &str = "2.1.4";
@@ -38,10 +39,37 @@ struct Prebuilt {
     size: u64,
 }
 
-struct TargetSpec {
-    upstream_dir: &'static str,
-    files: &'static [Prebuilt],
+/// Where a target's native libraries come from.
+enum DistKind {
+    /// Desktop targets: Git LFS blobs in `google-ai-edge/litert-lm`, one file
+    /// per entry in `files`.
+    LiteRtLmLfs {
+        upstream_dir: &'static str,
+        files: &'static [Prebuilt],
+    },
+    /// Android targets: a single AAR on Google Maven, from which we extract
+    /// `jni/<abi>/<name>` entries.
+    MavenAar {
+        abi: &'static str,
+        outputs: &'static [&'static str],
+    },
 }
+
+struct TargetSpec {
+    dist: DistKind,
+}
+
+// Pinned Android AAR — same file for every Android target, sourced from
+// Google Maven. `com.google.ai.edge.litert:litert:<LITERT_MAVEN_VERSION>`.
+const ANDROID_AAR_SHA256: &str = "29ce4fdc362306f3793b910d759d93867a5c2204bb890ac5f9410c62c3f7482a";
+const ANDROID_AAR_SIZE: u64 = 13_844_131;
+fn android_aar_url() -> String {
+    format!(
+        "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/\
+         {LITERT_MAVEN_VERSION}/litert-{LITERT_MAVEN_VERSION}.aar"
+    )
+}
+const ANDROID_OUTPUTS: &[&str] = &["libLiteRt.so", "libLiteRtClGlAccelerator.so"];
 
 const MACOS_ARM64: &[Prebuilt] = &[
     Prebuilt {
@@ -121,25 +149,34 @@ const WINDOWS_X86_64: &[Prebuilt] = &[
 ];
 
 fn target_spec(target: &str) -> Option<TargetSpec> {
-    Some(match target {
-        "aarch64-apple-darwin" => TargetSpec {
+    let dist = match target {
+        "aarch64-apple-darwin" => DistKind::LiteRtLmLfs {
             upstream_dir: "macos_arm64",
             files: MACOS_ARM64,
         },
-        "x86_64-unknown-linux-gnu" => TargetSpec {
+        "x86_64-unknown-linux-gnu" => DistKind::LiteRtLmLfs {
             upstream_dir: "linux_x86_64",
             files: LINUX_X86_64,
         },
-        "aarch64-unknown-linux-gnu" => TargetSpec {
+        "aarch64-unknown-linux-gnu" => DistKind::LiteRtLmLfs {
             upstream_dir: "linux_arm64",
             files: LINUX_ARM64,
         },
-        "x86_64-pc-windows-msvc" => TargetSpec {
+        "x86_64-pc-windows-msvc" => DistKind::LiteRtLmLfs {
             upstream_dir: "windows_x86_64",
             files: WINDOWS_X86_64,
         },
+        "aarch64-linux-android" => DistKind::MavenAar {
+            abi: "arm64-v8a",
+            outputs: ANDROID_OUTPUTS,
+        },
+        "x86_64-linux-android" => DistKind::MavenAar {
+            abi: "x86_64",
+            outputs: ANDROID_OUTPUTS,
+        },
         _ => return None,
-    })
+    };
+    Some(TargetSpec { dist })
 }
 
 fn main() {
@@ -245,45 +282,42 @@ fn locate_library(target: &str) -> Option<PathBuf> {
     Some(cache_dir)
 }
 
-fn cache_dir_for(target: &str) -> PathBuf {
-    let root = env::var_os("LITERT_CACHE_DIR")
+fn cache_root() -> PathBuf {
+    env::var_os("LITERT_CACHE_DIR")
         .map(PathBuf::from)
         .or_else(dirs::cache_dir)
-        .unwrap_or_else(|| PathBuf::from(env::var("OUT_DIR").unwrap()).join("litert-cache"));
-    root.join("litert-sys").join(LITERT_LM_TAG).join(target)
+        .unwrap_or_else(|| PathBuf::from(env::var("OUT_DIR").unwrap()).join("litert-cache"))
+}
+
+fn cache_dir_for(target: &str) -> PathBuf {
+    cache_root()
+        .join("litert-sys")
+        .join(LITERT_LM_TAG)
+        .join(target)
 }
 
 fn ensure_prebuilts(spec: &TargetSpec, cache_dir: &Path) {
     fs::create_dir_all(cache_dir).expect("create cache dir");
+    match &spec.dist {
+        DistKind::LiteRtLmLfs {
+            upstream_dir,
+            files,
+        } => ensure_lfs_prebuilts(upstream_dir, files, cache_dir),
+        DistKind::MavenAar { abi, outputs } => ensure_aar_prebuilts(abi, outputs, cache_dir),
+    }
+}
 
-    let missing: Vec<&Prebuilt> = spec
-        .files
-        .iter()
-        .filter(|p| !file_ok(cache_dir, p))
-        .collect();
-
+fn ensure_lfs_prebuilts(upstream_dir: &str, files: &[Prebuilt], cache_dir: &Path) {
+    let missing: Vec<&Prebuilt> = files.iter().filter(|p| !file_ok(cache_dir, p)).collect();
     if missing.is_empty() {
         return;
     }
-
-    if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
-        panic!(
-            "litert-sys: LITERT_NO_DOWNLOAD set but {} file(s) missing from {}: {}",
-            missing.len(),
-            cache_dir.display(),
-            missing
-                .iter()
-                .map(|p| p.name)
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
+    assert_downloads_allowed(cache_dir, missing.iter().map(|p| p.name));
 
     println!(
         "cargo:warning=litert-sys: downloading {} file(s) of LiteRT prebuilt \
-         {LITERT_LM_TAG} for target `{}` into {} (first build only)",
+         {LITERT_LM_TAG} for target `{upstream_dir}` into {} (first build only)",
         missing.len(),
-        spec.upstream_dir,
         cache_dir.display(),
     );
 
@@ -294,6 +328,100 @@ fn ensure_prebuilts(spec: &TargetSpec, cache_dir: &Path) {
             .unwrap_or_else(|| panic!("LFS batch response missing URL for oid {}", p.oid));
         download_and_verify(url, p, cache_dir);
     }
+}
+
+fn ensure_aar_prebuilts(abi: &str, outputs: &[&str], cache_dir: &Path) {
+    let missing: Vec<&str> = outputs
+        .iter()
+        .copied()
+        .filter(|name| !aar_output_ok(cache_dir, name))
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    assert_downloads_allowed(cache_dir, missing.iter().copied());
+
+    let aar_cache = cache_root()
+        .join("litert-sys")
+        .join(format!("maven-{LITERT_MAVEN_VERSION}"));
+    fs::create_dir_all(&aar_cache).expect("create maven cache");
+    let aar_path = aar_cache.join(format!("litert-{LITERT_MAVEN_VERSION}.aar"));
+
+    if !aar_is_verified(&aar_path) {
+        println!(
+            "cargo:warning=litert-sys: downloading LiteRT Maven AAR \
+             {LITERT_MAVEN_VERSION} into {} (first build only)",
+            aar_path.display()
+        );
+        let url = android_aar_url();
+        let mut buf = Vec::with_capacity(ANDROID_AAR_SIZE as usize);
+        ureq::get(&url)
+            .call()
+            .unwrap_or_else(|e| panic!("GET {url}: {e}"))
+            .into_reader()
+            .read_to_end(&mut buf)
+            .unwrap_or_else(|e| panic!("read AAR: {e}"));
+        if buf.len() as u64 != ANDROID_AAR_SIZE {
+            panic!(
+                "litert-sys: AAR size mismatch: expected {ANDROID_AAR_SIZE}, got {}",
+                buf.len()
+            );
+        }
+        let hash = hex(&Sha256::digest(&buf));
+        if hash != ANDROID_AAR_SHA256 {
+            panic!("litert-sys: AAR SHA-256 mismatch: expected {ANDROID_AAR_SHA256}, got {hash}");
+        }
+        fs::write(&aar_path, &buf).expect("write AAR");
+        fs::write(aar_cache.join(".aar.verified"), ANDROID_AAR_SHA256)
+            .expect("write AAR verified marker");
+    }
+
+    // Extract each requested file from jni/<abi>/ inside the AAR.
+    let aar_bytes = fs::read(&aar_path).expect("read AAR from cache");
+    let reader = std::io::Cursor::new(aar_bytes);
+    let mut archive = zip::ZipArchive::new(reader).expect("open AAR as zip");
+    for name in &missing {
+        let member = format!("jni/{abi}/{name}");
+        let mut file = archive
+            .by_name(&member)
+            .unwrap_or_else(|e| panic!("AAR missing entry {member}: {e}"));
+        let mut bytes = Vec::with_capacity(file.size() as usize);
+        std::io::Read::read_to_end(&mut file, &mut bytes).expect("read AAR entry");
+        let dest = cache_dir.join(name);
+        fs::write(&dest, &bytes).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
+        // Record the extracted SHA so we can skip rework on subsequent builds.
+        let hash = hex(&Sha256::digest(&bytes));
+        fs::write(cache_dir.join(format!("{name}.verified")), hash).expect("write verified marker");
+    }
+}
+
+fn assert_downloads_allowed<'a>(cache_dir: &Path, missing: impl Iterator<Item = &'a str>) {
+    if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
+        let names: Vec<&str> = missing.collect();
+        panic!(
+            "litert-sys: LITERT_NO_DOWNLOAD set but {} file(s) missing from {}: {}",
+            names.len(),
+            cache_dir.display(),
+            names.join(", "),
+        );
+    }
+}
+
+fn aar_output_ok(cache_dir: &Path, name: &str) -> bool {
+    cache_dir.join(name).exists() && cache_dir.join(format!("{name}.verified")).exists()
+}
+
+fn aar_is_verified(aar_path: &Path) -> bool {
+    let Ok(meta) = fs::metadata(aar_path) else {
+        return false;
+    };
+    if meta.len() != ANDROID_AAR_SIZE {
+        return false;
+    }
+    aar_path
+        .parent()
+        .map(|p| p.join(".aar.verified").exists())
+        .unwrap_or(false)
 }
 
 fn file_ok(dir: &Path, p: &Prebuilt) -> bool {

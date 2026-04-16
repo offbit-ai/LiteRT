@@ -5,6 +5,7 @@ members = [
     "litert",
     "litert-lm-sys",
     "litert-lm",
+    "xtask",
 ]
 
 [workspace.package]
