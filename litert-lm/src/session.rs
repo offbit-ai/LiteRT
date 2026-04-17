@@ -8,7 +8,7 @@ use std::{
 
 use litert_lm_sys as sys;
 
-use crate::{engine::EngineInner, Error, Result, SamplerParams};
+use crate::{engine::EngineInner, input::Input, Error, Result, SamplerParams};
 
 /// A stateful session for generating text with an [`Engine`](crate::Engine).
 ///
@@ -65,13 +65,33 @@ impl Session {
     /// # Ok(()) }
     /// ```
     pub fn generate(&mut self, prompt: &str) -> Result<String> {
-        let input = sys::InputData {
-            type_: sys::kInputText,
-            data: prompt.as_ptr().cast(),
-            size: prompt.len(),
+        self.generate_with_inputs(&[Input::Text(prompt)])
+    }
+
+    /// Generates a response from multimodal inputs (text, images, audio).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use litertlm::{Engine, EngineSettings, SamplerParams, Input};
+    /// # fn demo(engine: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut session = engine.create_session(SamplerParams::default())?;
+    /// let image_bytes = std::fs::read("photo.jpg")?;
+    /// let response = session.generate_with_inputs(&[
+    ///     Input::image(&image_bytes),
+    ///     Input::text("What's in this image?"),
+    /// ])?;
+    /// # Ok(()) }
+    /// ```
+    pub fn generate_with_inputs(&mut self, inputs: &[Input<'_>]) -> Result<String> {
+        let raw_inputs: Vec<sys::InputData> = inputs.iter().map(Input::to_raw).collect();
+        let responses = unsafe {
+            sys::litert_lm_session_generate_content(
+                self.ptr.as_ptr(),
+                raw_inputs.as_ptr(),
+                raw_inputs.len(),
+            )
         };
-        let responses =
-            unsafe { sys::litert_lm_session_generate_content(self.ptr.as_ptr(), &input, 1) };
         if responses.is_null() {
             return Err(Error::GenerationFailed("returned null".into()));
         }

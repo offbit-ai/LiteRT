@@ -26,11 +26,13 @@
 pub mod conversation;
 mod engine;
 mod error;
+mod input;
 mod sampler;
 mod session;
 
 pub use conversation::Conversation;
 pub use engine::{Backend, Engine, EngineSettings};
 pub use error::{Error, Result};
+pub use input::Input;
 pub use sampler::{Sampler, SamplerParams};
 pub use session::Session;

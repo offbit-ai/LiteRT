@@ -13,7 +13,7 @@ use std::{
 
 use litert_lm_sys as sys;
 
-use crate::{engine::EngineInner, Error, Result, SamplerParams};
+use crate::{engine::EngineInner, input::Input, Error, Result, SamplerParams};
 
 /// A conversation with an LLM, handling prompt formatting and multi-turn
 /// context automatically.
@@ -77,15 +77,20 @@ impl Conversation {
     /// })?;
     /// # Ok(()) }
     /// ```
-    pub fn send_message_stream(
-        &mut self,
-        prompt: &str,
-        mut on_token: impl FnMut(&str),
-    ) -> Result<()> {
+    pub fn send_message_stream(&mut self, prompt: &str, on_token: impl FnMut(&str)) -> Result<()> {
         let message_json = format!(
             r#"{{"role":"user","content":[{{"type":"text","text":{}}}]}}"#,
             serde_json_escape(prompt)
         );
+        self.send_raw_message_stream(&message_json, on_token)
+    }
+
+    /// Internal: sends a pre-formatted JSON message and streams the response.
+    fn send_raw_message_stream(
+        &mut self,
+        message_json: &str,
+        mut on_token: impl FnMut(&str),
+    ) -> Result<()> {
         let msg_cstr = CString::new(message_json).map_err(|_| Error::NullPointer)?;
 
         struct State<'a> {
@@ -109,9 +114,6 @@ impl Conversation {
                 return;
             }
             if !chunk.is_null() {
-                // Conversation callback sends JSON: {"content":[{"text":"..."}]}
-                // or plain text depending on the engine version. Try to extract
-                // text from JSON; fall back to raw string.
                 let raw = CStr::from_ptr(chunk).to_string_lossy();
                 let text = extract_text_from_json(&raw).unwrap_or_else(|| raw.to_string());
                 if !text.is_empty() {
@@ -137,7 +139,7 @@ impl Conversation {
             sys::litert_lm_conversation_send_message_stream(
                 self.ptr.as_ptr(),
                 msg_cstr.as_ptr(),
-                std::ptr::null(), // extra_context
+                std::ptr::null(),
                 Some(trampoline),
                 &mut state as *mut State as *mut c_void,
             )
@@ -166,6 +168,40 @@ impl Conversation {
         })?;
         Ok(response)
     }
+
+    /// Sends multimodal inputs (text + images + audio) with streaming.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use litertlm::{Engine, EngineSettings, SamplerParams, Input};
+    /// # fn demo(engine: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut conv = engine.create_conversation(SamplerParams::default().top_p(0.95))?;
+    /// let image = std::fs::read("photo.jpg")?;
+    /// conv.send_inputs_stream(
+    ///     &[Input::image(&image), Input::text("What's in this image?")],
+    ///     |chunk| print!("{chunk}"),
+    /// )?;
+    /// # Ok(()) }
+    /// ```
+    pub fn send_inputs_stream(
+        &mut self,
+        inputs: &[Input<'_>],
+        on_token: impl FnMut(&str),
+    ) -> Result<()> {
+        let content_json = crate::input::inputs_to_content_json(inputs);
+        let message_json = format!(r#"{{"role":"user","content":{content_json}}}"#);
+        self.send_raw_message_stream(&message_json, on_token)
+    }
+
+    /// Sends multimodal inputs and returns the full response (blocking).
+    pub fn send_inputs(&mut self, inputs: &[Input<'_>]) -> Result<String> {
+        let mut response = String::new();
+        self.send_inputs_stream(inputs, |chunk| {
+            response.push_str(chunk);
+        })?;
+        Ok(response)
+    }
 }
 
 impl Drop for Conversation {
@@ -175,7 +211,7 @@ impl Drop for Conversation {
 }
 
 /// Minimal JSON string escaping for the message payload.
-fn serde_json_escape(s: &str) -> String {
+pub(crate) fn serde_json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {
