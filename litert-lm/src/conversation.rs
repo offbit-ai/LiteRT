@@ -54,7 +54,10 @@ impl Conversation {
         unsafe { sys::litert_lm_conversation_config_delete(conv_config) };
 
         let ptr = NonNull::new(conv_ptr).ok_or(Error::SessionCreationFailed)?;
-        Ok(Self { ptr, _engine: engine })
+        Ok(Self {
+            ptr,
+            _engine: engine,
+        })
     }
 
     /// Sends a message and streams the response token-by-token.

@@ -145,9 +145,15 @@ impl Engine {
     /// # Ok::<(), litert_lm::Error>(())
     /// ```
     pub fn new(settings: EngineSettings) -> Result<Self> {
-        // Suppress the wall of INFO/WARNING logs from absl + LiteRT internals.
-        // 2 = WARNING, 3 = ERROR. We set to ERROR-only by default.
-        unsafe { sys::litert_lm_set_min_log_level(3) };
+        // Suppress verbose logging from three independent log systems:
+        // 1. absl (the LiteRT-LM engine's own logging)
+        unsafe { sys::litert_lm_set_min_log_level(3) }; // 3 = ERROR only
+                                                        // 2. TFLite C++ runtime (WebGPU delegate's I0000/W0000 lines)
+                                                        //    Respects TF_CPP_MIN_LOG_LEVEL env var: 0=INFO, 1=WARN, 2=ERROR, 3=FATAL
+        std::env::set_var("TF_CPP_MIN_LOG_LEVEL", "2");
+        // 3. LiteRT C logger (accelerator registry INFO lines) — handled
+        //    via litert_sys's libloading-based set_global_log_severity if
+        //    the symbols are available on this platform.
 
         let model_str = path_to_cstring(&settings.model_path)?;
         let backend_str = CString::new(settings.backend.as_str()).unwrap();
