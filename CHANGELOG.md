@@ -6,18 +6,32 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### In-progress: litert-lm (not yet published)
+## [0.2.0] — LiteRT-LM crates
 
-`litert-lm-sys` and `litert-lm` are scaffolded in the workspace with
-bindings, safe API, and a mirrored shared library — but NOT published to
-crates.io. Text generation has not been verified end-to-end yet:
+Adds `litert-lm-sys` and `litert-lm` for on-device LLM inference.
+End-to-end verified: Qwen3-0.6B generates text on both CPU and GPU.
 
-- GPU backend: Metal shader compilation exceeds 10 min on first run for
-  600MB models. Likely resolves with a warm cache but not yet confirmed.
-- CPU backend: upstream `engine.cc` fatally requires a vision encoder
-  section even on text-only models when the main backend is CPU.
+### New crates
 
-These crates remain `publish = false` until actual text output is observed.
+- **`litert-lm-sys`** — 46 `litert_lm_*` FFI bindings from `c/engine.h`.
+  `build.rs` downloads `libLiteRtLmC.{so,dylib}` (built from source via
+  Bazel) from our mirrored GitHub release, SHA-256-verified.
+- **`litert-lm`** — safe API: `Engine`, `EngineSettings` with typed
+  `Backend` enum, `Session::generate`, `Conversation::send_message_stream`
+  for token-by-token streaming, `SamplerParams` (TopK/TopP/Greedy).
+
+### Highlights
+
+- **GPU inference** works via `CreateAny` factory (Metal/WebGPU).
+- **CPU inference** works with TopP sampling and null vision/audio backends.
+- **Conversation API** applies model prompt templates correctly for streaming.
+- Auto-download of Qwen3-0.6B in the example.
+
+### Known limitations
+
+- WebGPU delegate `I0000` log lines go to stderr (hardcoded, can't suppress).
+- CPU TopK sampler not implemented upstream; use TopP.
+- Windows and Android not yet supported for `litert-lm-sys`.
 
 ## [0.1.0] — initial release
 
