@@ -49,21 +49,25 @@ impl Backend {
 pub struct EngineSettings {
     model_path: PathBuf,
     backend: Backend,
-    vision_backend: Backend,
-    audio_backend: Backend,
+    /// None = auto-detect from model metadata (null in C API).
+    vision_backend: Option<Backend>,
+    /// None = auto-detect from model metadata (null in C API).
+    audio_backend: Option<Backend>,
     max_num_tokens: Option<i32>,
     cache_dir: Option<PathBuf>,
 }
 
 impl EngineSettings {
     /// Create settings for a model file at the given path.
-    /// Defaults to [`Backend::Gpu`] for all modalities.
+    /// Main backend defaults to [`Backend::Gpu`]; vision/audio auto-detect
+    /// from model metadata (null in C API → `EngineSettings::CreateDefault`
+    /// decides).
     pub fn new(model_path: impl Into<PathBuf>) -> Self {
         Self {
             model_path: model_path.into(),
             backend: Backend::default(),
-            vision_backend: Backend::default(),
-            audio_backend: Backend::default(),
+            vision_backend: None,
+            audio_backend: None,
             max_num_tokens: None,
             cache_dir: None,
         }
@@ -76,19 +80,19 @@ impl EngineSettings {
         self
     }
 
-    /// Set the vision encoder backend. Models without a vision encoder
-    /// ignore this setting.
+    /// Set the vision encoder backend. `None` (default) auto-detects from
+    /// model metadata; text-only models skip vision entirely.
     #[must_use]
     pub fn vision_backend(mut self, backend: Backend) -> Self {
-        self.vision_backend = backend;
+        self.vision_backend = Some(backend);
         self
     }
 
-    /// Set the audio encoder backend. Models without an audio encoder
-    /// ignore this setting.
+    /// Set the audio encoder backend. `None` (default) auto-detects from
+    /// model metadata; text-only models skip audio entirely.
     #[must_use]
     pub fn audio_backend(mut self, backend: Backend) -> Self {
-        self.audio_backend = backend;
+        self.audio_backend = Some(backend);
         self
     }
 
@@ -141,17 +145,31 @@ impl Engine {
     /// # Ok::<(), litert_lm::Error>(())
     /// ```
     pub fn new(settings: EngineSettings) -> Result<Self> {
+        // Suppress the wall of INFO/WARNING logs from absl + LiteRT internals.
+        // 2 = WARNING, 3 = ERROR. We set to ERROR-only by default.
+        unsafe { sys::litert_lm_set_min_log_level(3) };
+
         let model_str = path_to_cstring(&settings.model_path)?;
         let backend_str = CString::new(settings.backend.as_str()).unwrap();
-        let vision_str = CString::new(settings.vision_backend.as_str()).unwrap();
-        let audio_str = CString::new(settings.audio_backend.as_str()).unwrap();
+
+        // Vision/audio: None → null → C API auto-detects from model metadata.
+        // Only pass a non-null string if the user explicitly set a backend
+        // (e.g., for multimodal models with vision/audio encoder sections).
+        let vision_cstr = settings
+            .vision_backend
+            .map(|b| CString::new(b.as_str()).unwrap());
+        let audio_cstr = settings
+            .audio_backend
+            .map(|b| CString::new(b.as_str()).unwrap());
 
         let raw_settings = unsafe {
             sys::litert_lm_engine_settings_create(
                 model_str.as_ptr(),
                 backend_str.as_ptr(),
-                vision_str.as_ptr(),
-                audio_str.as_ptr(),
+                vision_cstr
+                    .as_ref()
+                    .map_or(std::ptr::null(), |s| s.as_ptr()),
+                audio_cstr.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
             )
         };
         if raw_settings.is_null() {

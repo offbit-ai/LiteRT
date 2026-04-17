@@ -47,27 +47,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("model: {} ({})", model_path.display(), model_info.label);
     println!("loading engine...");
 
-    let use_cpu = args.iter().any(|a| a == "--cpu");
-    let backend = if use_cpu { Backend::Cpu } else { Backend::Gpu };
+    let backend = if args.iter().any(|a| a == "--cpu") {
+        Backend::Cpu
+    } else {
+        Backend::Gpu
+    };
     println!("backend: {backend:?}");
     let cache_dir = std::env::temp_dir().join("litert-lm-cache");
     fs::create_dir_all(&cache_dir)?;
-    let mut settings = EngineSettings::new(&model_path)
-        .backend(backend)
-        .max_num_tokens(512)
-        .cache_dir(&cache_dir);
-    // For text-only models on CPU: vision/audio backends must be GPU
-    // (upstream quirk — CPU path fatally requires encoder sections).
-    if use_cpu {
-        settings = settings
-            .vision_backend(Backend::Gpu)
-            .audio_backend(Backend::Gpu);
-    }
-    let engine = Engine::new(settings)?;
+    let engine = Engine::new(
+        EngineSettings::new(&model_path)
+            .backend(backend)
+            .max_num_tokens(512)
+            .cache_dir(&cache_dir),
+    )?;
 
     println!("creating session...");
-    let mut session =
-        engine.create_session(SamplerParams::default().top_k(40).temperature(0.7).seed(42))?;
+    // Use TopP (nucleus) sampling — matches the model's own metadata and
+    // is supported on both CPU and GPU backends. TopK is not yet implemented
+    // on CPU upstream.
+    let mut session = engine.create_session(
+        SamplerParams::default()
+            .top_p(0.95)
+            .temperature(0.7)
+            .seed(42),
+    )?;
 
     let prompt = "Explain Rust lifetimes in one sentence.";
     println!("prompt: {prompt}");

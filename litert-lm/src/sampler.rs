@@ -66,10 +66,11 @@ impl SamplerParams {
         self
     }
 
-    /// Set the nucleus probability threshold.
+    /// Set the nucleus probability threshold. Implies [`Sampler::TopP`].
     #[must_use]
     pub fn top_p(mut self, v: f32) -> Self {
         self.top_p = v;
+        self.sampler = Sampler::TopP;
         self
     }
 
