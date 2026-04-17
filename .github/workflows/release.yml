@@ -47,18 +47,6 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p litert
 
-      - name: wait for index propagation
-        run: sleep 30
-
-      - name: cargo publish litert-lm-sys
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p litert-lm-sys
-
-      - name: wait for index propagation
-        run: sleep 30
-
-      - name: cargo publish litert-lm
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p litert-lm
+      # litert-lm-sys and litert-lm are publish=false until end-to-end
+      # text generation is verified. They stay in the workspace for
+      # development but don't ship to crates.io.

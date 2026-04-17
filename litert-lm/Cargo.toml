@@ -1,6 +1,7 @@
 [package]
 name        = "litert-lm"
 description = "Safe, idiomatic Rust bindings to Google's LiteRT-LM on-device LLM engine."
+publish     = false   # not yet verified end-to-end; see internal/Spec.md
 build       = "build.rs"
 readme      = "README.md"
 keywords    = ["litert", "llm", "gemma", "inference", "ml"]
