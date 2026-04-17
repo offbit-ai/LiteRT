@@ -39,8 +39,6 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p litert-sys
 
-      # Give crates.io's search index a moment to pick up the new version
-      # before litert's dependency resolution runs against it.
       - name: wait for index propagation
         run: sleep 30
 
@@ -48,3 +46,19 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p litert
+
+      - name: wait for index propagation
+        run: sleep 30
+
+      - name: cargo publish litert-lm-sys
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p litert-lm-sys
+
+      - name: wait for index propagation
+        run: sleep 30
+
+      - name: cargo publish litert-lm
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p litert-lm
