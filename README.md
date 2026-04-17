@@ -63,7 +63,7 @@ each by SHA-256, and downloads them into a user-level cache the first time
 | `litert-sys`    | Raw FFI against the LiteRT 2.x C API         | 0.1.x            |
 | `litert`        | Idiomatic safe wrappers                      | 0.1.x            |
 | `litert-lm-sys` | Raw FFI against LiteRT-LM (`c/engine.h`)     | stubbed, 0.2.0   |
-| `litert-lm`     | Safe LLM-inference API                       | stubbed, 0.2.0   |
+| `litertlm`      | Safe LLM-inference API                       | 0.2.x            |
 
 The LiteRT-LM side requires building a static C++ library from source with
 heavy transitive dependencies (abseil, protobuf, flatbuffers, nlohmann_json);

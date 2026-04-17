@@ -16,7 +16,7 @@ End-to-end verified: Qwen3-0.6B generates text on both CPU and GPU.
 - **`litert-lm-sys`** — 46 `litert_lm_*` FFI bindings from `c/engine.h`.
   `build.rs` downloads `libLiteRtLmC.{so,dylib}` (built from source via
   Bazel) from our mirrored GitHub release, SHA-256-verified.
-- **`litert-lm`** — safe API: `Engine`, `EngineSettings` with typed
+- **`litertlm`** — safe API: `Engine`, `EngineSettings` with typed
   `Backend` enum, `Session::generate`, `Conversation::send_message_stream`
   for token-by-token streaming, `SamplerParams` (TopK/TopP/Greedy).
 

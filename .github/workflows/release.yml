@@ -58,7 +58,7 @@ jobs:
       - name: wait for index propagation
         run: sleep 30
 
-      - name: cargo publish litert-lm
+      - name: cargo publish litertlm
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p litert-lm
+        run: cargo publish -p litertlm

@@ -28,7 +28,7 @@ impl Sampler {
 /// # Example
 ///
 /// ```no_run
-/// use litert_lm::SamplerParams;
+/// use litertlm::SamplerParams;
 ///
 /// let params = SamplerParams::default()
 ///     .top_k(40)

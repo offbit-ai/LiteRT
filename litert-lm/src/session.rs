@@ -57,8 +57,8 @@ impl Session {
     /// # Example
     ///
     /// ```no_run
-    /// # use litert_lm::{Engine, EngineSettings, SamplerParams};
-    /// # fn demo(engine: &Engine) -> litert_lm::Result<()> {
+    /// # use litertlm::{Engine, EngineSettings, SamplerParams};
+    /// # fn demo(engine: &Engine) -> litertlm::Result<()> {
     /// let mut session = engine.create_session(SamplerParams::default())?;
     /// let response = session.generate("Explain Rust lifetimes briefly")?;
     /// println!("{response}");

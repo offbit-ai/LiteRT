@@ -69,8 +69,8 @@ impl Conversation {
     /// # Example
     ///
     /// ```no_run
-    /// # use litert_lm::{Engine, EngineSettings, SamplerParams};
-    /// # fn demo(engine: &Engine) -> litert_lm::Result<()> {
+    /// # use litertlm::{Engine, EngineSettings, SamplerParams};
+    /// # fn demo(engine: &Engine) -> litertlm::Result<()> {
     /// let mut conv = engine.create_conversation(SamplerParams::default().top_p(0.95))?;
     /// conv.send_message_stream("Tell me a story", |chunk| {
     ///     print!("{chunk}");

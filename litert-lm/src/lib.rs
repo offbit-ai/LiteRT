@@ -1,9 +1,9 @@
 //! Safe Rust bindings to LiteRT-LM — Google's on-device LLM inference engine.
 //!
 //! ```no_run
-//! use litert_lm::{Backend, Engine, EngineSettings, SamplerParams};
+//! use litertlm::{Backend, Engine, EngineSettings, SamplerParams};
 //!
-//! # fn main() -> litert_lm::Result<()> {
+//! # fn main() -> litertlm::Result<()> {
 //! let engine = Engine::new(
 //!     EngineSettings::new("model.litertlm")
 //!         .backend(Backend::Gpu)

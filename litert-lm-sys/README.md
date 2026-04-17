@@ -2,7 +2,7 @@
 
 Raw FFI bindings to Google's LiteRT-LM C engine API.
 
-Most users want the safe wrappers in [`litert-lm`](https://crates.io/crates/litert-lm).
+Most users want the safe wrappers in [`litertlm`](https://crates.io/crates/litertlm).
 At build time, `build.rs` downloads a pinned `libLiteRtLmC.{so,dylib}` from
 our mirrored GitHub release and SHA-256-verifies it.
 

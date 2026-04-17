@@ -1,14 +1,14 @@
-# litert-lm
+# litertlm
 
 Safe Rust bindings to Google's LiteRT-LM — on-device LLM inference.
 
 ```toml
 [dependencies]
-litert-lm = "0.2"
+litertlm = "0.2"
 ```
 
 ```rust
-use litert_lm::{Backend, Engine, EngineSettings, SamplerParams};
+use litertlm::{Backend, Engine, EngineSettings, SamplerParams};
 
 let engine = Engine::new(
     EngineSettings::new("model.litertlm")

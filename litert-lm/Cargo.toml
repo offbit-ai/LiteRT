@@ -1,5 +1,5 @@
 [package]
-name        = "litert-lm"
+name        = "litertlm"
 description = "Safe, idiomatic Rust bindings to Google's LiteRT-LM on-device LLM engine."
 build       = "build.rs"
 readme      = "README.md"

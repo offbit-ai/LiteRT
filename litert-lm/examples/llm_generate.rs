@@ -10,7 +10,7 @@
 
 use std::{error::Error, fs, io::Read, path::PathBuf};
 
-use litert_lm::{Backend, Engine, EngineSettings, SamplerParams};
+use litertlm::{Backend, Engine, EngineSettings, SamplerParams};
 
 const MODEL_REPO: &str = "litert-community/Qwen3-0.6B";
 const MODEL_FILE: &str = "Qwen3-0.6B.litertlm";

@@ -4,7 +4,7 @@ members = [
     "litert-sys",
     "litert",
     "litert-lm-sys",
-    "litert-lm",
+    "litert-lm",  # directory name kept; crate name is "litertlm"
     "xtask",
 ]
 
@@ -25,7 +25,7 @@ categories    = ["api-bindings", "science"]
 litert-sys    = { version = "0.2.0", path = "litert-sys" }
 litert        = { version = "0.2.0", path = "litert" }
 litert-lm-sys = { version = "0.2.0", path = "litert-lm-sys" }
-litert-lm     = { version = "0.2.0", path = "litert-lm" }
+litertlm      = { version = "0.2.0", path = "litert-lm" }
 
 thiserror   = "1"
 libloading  = "0.8"

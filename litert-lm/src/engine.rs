@@ -39,7 +39,7 @@ impl Backend {
 /// # Example
 ///
 /// ```no_run
-/// use litert_lm::{Backend, EngineSettings};
+/// use litertlm::{Backend, EngineSettings};
 ///
 /// let settings = EngineSettings::new("model.litertlm")
 ///     .backend(Backend::Gpu)
@@ -139,10 +139,10 @@ impl Engine {
     /// # Example
     ///
     /// ```no_run
-    /// use litert_lm::{Engine, EngineSettings};
+    /// use litertlm::{Engine, EngineSettings};
     ///
     /// let engine = Engine::new(EngineSettings::new("gemma2-2b-it.litertlm"))?;
-    /// # Ok::<(), litert_lm::Error>(())
+    /// # Ok::<(), litertlm::Error>(())
     /// ```
     pub fn new(settings: EngineSettings) -> Result<Self> {
         // Suppress verbose logging from three independent log systems:
