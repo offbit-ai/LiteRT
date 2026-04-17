@@ -36,8 +36,8 @@ fn prebuilt_for(target: &str) -> Option<Prebuilt> {
         "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => Prebuilt {
             url_filename: "libLiteRtLmC.so",
             local_name: "libLiteRtLmC.so",
-            sha256: "96ed380d49738d44180ff3215d32964a0c72e31724b3f18998362724425ab731",
-            size: 45_413_112,
+            sha256: "82a524d6361d15f3b5808549e1d8cf757132cd58282986a240456b7d9f989bc1",
+            size: 45_413_552,
         },
         "aarch64-apple-darwin" => Prebuilt {
             url_filename: "libLiteRtLmC.dylib",
