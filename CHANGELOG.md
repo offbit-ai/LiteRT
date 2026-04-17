@@ -6,6 +6,20 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] — Multimodal vision + streaming fixes
+
+- **Vision inference** via `Conversation::send_raw_stream` with image file
+  paths in JSON. Tested with Gemma 4 E2B (2.4 GB) — correctly identifies
+  objects and describes scenes from JPEG images.
+- **`Input` enum** — `Text`, `Image`, `ImageEnd`, `Audio`, `AudioEnd` for
+  `Session::generate_with_inputs`.
+- **`Conversation::send_raw_stream`** now public for custom JSON messages
+  (multimodal content arrays with image paths).
+- Vision encoder runs on CPU by default to avoid absl ODR crash between
+  `libLiteRtLmC` and `libLiteRtWebGpuAccelerator` (both statically link
+  absl; text generation still uses GPU).
+- Log suppression: `litert_lm_set_min_log_level(3)` + `TF_CPP_MIN_LOG_LEVEL`.
+
 ## [0.2.0] — LiteRT-LM crates
 
 Adds `litert-lm-sys` and `litert-lm` for on-device LLM inference.
