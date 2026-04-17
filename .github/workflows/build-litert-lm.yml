@@ -1,7 +1,8 @@
 name: Build libLiteRtLmC
 
-# Builds the LiteRT-LM C engine as a shared library from source, uploads
-# per-target artifacts. Run manually or on release tags for 0.2.0+.
+# Builds the LiteRT-LM C engine as a shared library from source.
+# Strategy: build the project normally (all static archives), then post-link
+# them into a single shared library. This avoids patching CMake targets.
 on:
   workflow_dispatch:
     inputs:
@@ -19,6 +20,7 @@ jobs:
   build-linux-x86_64:
     name: linux x86_64
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -32,60 +34,7 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: patch CMakeLists to add shared lib target
-        run: |
-          cat >> /tmp/litert-lm/cmake/packages/litert_lm/CMakeLists.txt <<'PATCH'
-
-          # --- litert-rs: produce a shared library for FFI consumption ---
-          generate_local_aggregate()
-          add_library(litert_lm_shared SHARED ${LITERTLM_PROJECT_ROOT}/c/engine.cc
-                                              ${LITERTLM_PROJECT_ROOT}/c/litert_lm_logging.cc)
-          target_include_directories(litert_lm_shared PRIVATE
-            ${LITERTLM_INCLUDE_PATHS}
-            ${LITERT_INCLUDE_PATHS}
-            ${THIRD_PARTY_DIR}/json/include
-          )
-          target_link_libraries(litert_lm_shared PRIVATE
-            LiteRTLM::Local::Aggregate
-            ${_LITERTLM_SYSLIBS}
-          )
-          set_target_properties(litert_lm_shared PROPERTIES
-            OUTPUT_NAME LiteRtLmC
-            VERSION 0.10.2
-            SOVERSION 0
-          )
-          # Only export litert_lm_* symbols
-          if(APPLE)
-            set_target_properties(litert_lm_shared PROPERTIES
-              LINK_FLAGS "-Wl,-exported_symbols_list,${LITERTLM_PROJECT_ROOT}/.github/litert_lm_exports.txt"
-            )
-          elseif(UNIX)
-            set_target_properties(litert_lm_shared PROPERTIES
-              LINK_FLAGS "-Wl,--version-script=${LITERTLM_PROJECT_ROOT}/.github/litert_lm_exports.map"
-            )
-          endif()
-          PATCH
-
-      - name: create export maps
-        run: |
-          mkdir -p /tmp/litert-lm/.github
-          # Linux version script
-          cat > /tmp/litert-lm/.github/litert_lm_exports.map <<'EOF'
-          VERS_1.0 {
-            global:
-              litert_lm_*;
-            local:
-              *;
-          };
-          EOF
-          # macOS exported_symbols_list
-          grep -E '^LITERT_LM_C_API_EXPORT' /tmp/litert-lm/c/engine.h -A1 | \
-            grep 'litert_lm_' | sed 's/.*\(litert_lm_[a-z_]*\).*/\1/' | \
-            sed 's/^/_/' > /tmp/litert-lm/.github/litert_lm_exports.txt || true
-
-      # The top-level CMakeLists uses ExternalProject_Add, making inner
-      # targets invisible. Invoke the inner cmake directly.
-      - name: cmake configure (inner project)
+      - name: cmake configure
         run: |
           cmake -S /tmp/litert-lm/cmake/packages/litert_lm \
                 -B /tmp/litert-lm/build \
@@ -94,28 +43,56 @@ jobs:
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DLITERTLM_PROJECT_ROOT=/tmp/litert-lm
 
-      - name: cmake build
-        run: cmake --build /tmp/litert-lm/build -j$(nproc) --target litert_lm_shared
-        timeout-minutes: 60
+      - name: cmake build (all static targets)
+        run: cmake --build /tmp/litert-lm/build -j$(nproc)
 
-      - name: inspect output
+      - name: create version script
         run: |
-          find /tmp/litert-lm/build -name 'libLiteRtLmC*' -type f -ls | head -5
-          LIB=$(find /tmp/litert-lm/build -name 'libLiteRtLmC.so*' -type f | head -1)
-          if [ -n "$LIB" ]; then
-            echo "exported litert_lm_* symbols:"
-            nm -D --defined-only "$LIB" | grep -c 'litert_lm_'
-          fi
+          cat > /tmp/litert_lm_exports.map <<'EOF'
+          VERS_1.0 {
+            global:
+              litert_lm_*;
+            local:
+              *;
+          };
+          EOF
+
+      - name: post-link shared library
+        run: |
+          cd /tmp/litert-lm/build
+
+          # The C engine static lib (our API surface)
+          ENGINE_A=$(find . -name 'libc_engine.a' -type f | head -1)
+          echo "engine lib: $ENGINE_A"
+
+          # All other static archives (deps)
+          ALL_A=$(find . -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          echo "total .a files: $(echo "$ALL_A" | wc -l)"
+
+          # Link: whole-archive the engine (so all litert_lm_* symbols survive),
+          # regular-link the deps (only pull what's referenced).
+          g++ -shared -o libLiteRtLmC.so \
+            -Wl,--version-script=/tmp/litert_lm_exports.map \
+            -Wl,--whole-archive $ENGINE_A -Wl,--no-whole-archive \
+            $ALL_A \
+            -Wl,--allow-multiple-definition \
+            -lstdc++ -lpthread -ldl -lm
+
+          echo "=== output ==="
+          ls -la libLiteRtLmC.so
+          echo "litert_lm_* symbols:"
+          nm -D --defined-only libLiteRtLmC.so | grep -c 'litert_lm_'
 
       - uses: actions/upload-artifact@v4
         with:
           name: libLiteRtLmC-linux-x86_64
-          path: /tmp/litert-lm/build/libLiteRtLmC*
-          if-no-files-found: warn
+          path: /tmp/litert-lm/build/libLiteRtLmC.so
+          if-no-files-found: error
 
   build-macos-arm64:
     name: macos arm64
     runs-on: macos-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -127,30 +104,7 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: patch CMakeLists to add shared lib target
-        run: |
-          cat >> /tmp/litert-lm/cmake/packages/litert_lm/CMakeLists.txt <<'PATCH'
-
-          generate_local_aggregate()
-          add_library(litert_lm_shared SHARED ${LITERTLM_PROJECT_ROOT}/c/engine.cc
-                                              ${LITERTLM_PROJECT_ROOT}/c/litert_lm_logging.cc)
-          target_include_directories(litert_lm_shared PRIVATE
-            ${LITERTLM_INCLUDE_PATHS}
-            ${LITERT_INCLUDE_PATHS}
-            ${THIRD_PARTY_DIR}/json/include
-          )
-          target_link_libraries(litert_lm_shared PRIVATE
-            LiteRTLM::Local::Aggregate
-            ${_LITERTLM_SYSLIBS}
-          )
-          set_target_properties(litert_lm_shared PROPERTIES
-            OUTPUT_NAME LiteRtLmC
-            VERSION 0.10.2
-            SOVERSION 0
-          )
-          PATCH
-
-      - name: cmake configure (inner project)
+      - name: cmake configure
         run: |
           cmake -S /tmp/litert-lm/cmake/packages/litert_lm \
                 -B /tmp/litert-lm/build \
@@ -159,21 +113,41 @@ jobs:
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DLITERTLM_PROJECT_ROOT=/tmp/litert-lm
 
-      - name: cmake build
-        run: cmake --build /tmp/litert-lm/build -j$(sysctl -n hw.ncpu) --target litert_lm_shared
-        timeout-minutes: 60
+      - name: cmake build (all static targets)
+        run: cmake --build /tmp/litert-lm/build -j$(sysctl -n hw.ncpu)
 
-      - name: inspect output
+      - name: create export list
         run: |
-          find /tmp/litert-lm/build -name 'libLiteRtLmC*' -type f -ls | head -5
-          LIB=$(find /tmp/litert-lm/build -name 'libLiteRtLmC*.dylib' -type f | head -1)
-          if [ -n "$LIB" ]; then
-            echo "exported litert_lm_* symbols:"
-            nm -gU "$LIB" | grep -c 'litert_lm_'
-          fi
+          grep -E 'LITERT_LM_C_API_EXPORT' /tmp/litert-lm/c/engine.h -A1 | \
+            grep 'litert_lm_' | sed 's/.*\(litert_lm_[a-z_]*\).*/\1/' | \
+            sed 's/^/_/' | sort -u > /tmp/litert_lm_exports.txt
+          echo "export count: $(wc -l < /tmp/litert_lm_exports.txt)"
+          cat /tmp/litert_lm_exports.txt
+
+      - name: post-link shared library
+        run: |
+          cd /tmp/litert-lm/build
+
+          ENGINE_A=$(find . -name 'libc_engine.a' -type f | head -1)
+          echo "engine lib: $ENGINE_A"
+
+          ALL_A=$(find . -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          echo "total .a files: $(echo "$ALL_A" | wc -l)"
+
+          clang++ -dynamiclib -o libLiteRtLmC.dylib \
+            -Wl,-exported_symbols_list,/tmp/litert_lm_exports.txt \
+            -Wl,-all_load $ENGINE_A \
+            $ALL_A \
+            -framework Foundation -framework Metal -framework CoreFoundation \
+            -lstdc++ -lpthread -ldl -lm
+
+          echo "=== output ==="
+          ls -la libLiteRtLmC.dylib
+          echo "litert_lm_* symbols:"
+          nm -gU libLiteRtLmC.dylib | grep -c 'litert_lm_'
 
       - uses: actions/upload-artifact@v4
         with:
           name: libLiteRtLmC-macos-arm64
-          path: /tmp/litert-lm/build/libLiteRtLmC*
-          if-no-files-found: warn
+          path: /tmp/litert-lm/build/libLiteRtLmC.dylib
+          if-no-files-found: error
