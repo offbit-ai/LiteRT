@@ -134,9 +134,12 @@ fn locate_library(target: &str) -> Option<PathBuf> {
         return Some(dir);
     }
 
-    // 2) Forward litert-sys lib dir so the linker can also find libLiteRt.
+    // 2) Forward litert-sys lib dir so the linker can also find libLiteRt +
+    //    its accelerator/plugin dylibs (libGemmaModelConstraintProvider etc.)
+    //    which libLiteRtLmC depends on at runtime.
     if let Ok(litert_dir) = env::var("DEP_LITERT_LIB_DIR") {
         println!("cargo:rustc-link-search=native={litert_dir}");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{litert_dir}");
     }
 
     // 3) Download the mirrored shared lib.
@@ -227,6 +230,19 @@ fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
     }
 
     fs::write(&dest, &buf).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
+
+    // The Bazel-built dylib ships with install_name=bazel-out/.../libLiteRtLmC.*
+    // which is a relative path the macOS loader can't resolve. Rewrite to
+    // @rpath/ so our -rpath emission works. This is safe because @rpath/ is
+    // shorter than the Bazel path, so install_name_tool fits in the existing
+    // header padding.
+    if dest.extension().is_some_and(|e| e == "dylib") {
+        let _ = std::process::Command::new("install_name_tool")
+            .args(["-id", &format!("@rpath/{}", pb.local_name)])
+            .arg(&dest)
+            .status();
+    }
+
     fs::write(&marker, pb.sha256).expect("write verified marker");
 }
 

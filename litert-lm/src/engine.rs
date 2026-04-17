@@ -11,6 +11,29 @@ use litert_lm_sys as sys;
 
 use crate::{Error, Result, SamplerParams, Session};
 
+/// Inference backend for the LLM engine.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// CPU reference backend. Always available, slower.
+    Cpu,
+    /// GPU backend (Metal on Apple, WebGPU elsewhere). Falls back to CPU if
+    /// no GPU accelerator is registered.
+    #[default]
+    Gpu,
+    /// NPU backend. Available on a narrow set of platforms.
+    Npu,
+}
+
+impl Backend {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "CPU",
+            Self::Gpu => "GPU",
+            Self::Npu => "NPU",
+        }
+    }
+}
+
 /// Configuration for constructing an [`Engine`].
 ///
 /// # Example
@@ -19,23 +42,54 @@ use crate::{Error, Result, SamplerParams, Session};
 /// use litert_lm::EngineSettings;
 ///
 /// let settings = EngineSettings::new("gemma2-2b-it.litertlm")
+///     .backend("gpu")
 ///     .max_num_tokens(1024)
 ///     .cache_dir("/tmp/litert-lm-cache");
 /// ```
 pub struct EngineSettings {
     model_path: PathBuf,
+    backend: Backend,
+    vision_backend: Backend,
+    audio_backend: Backend,
     max_num_tokens: Option<i32>,
     cache_dir: Option<PathBuf>,
 }
 
 impl EngineSettings {
     /// Create settings for a model file at the given path.
+    /// Defaults to [`Backend::Gpu`] for all modalities.
     pub fn new(model_path: impl Into<PathBuf>) -> Self {
         Self {
             model_path: model_path.into(),
+            backend: Backend::default(),
+            vision_backend: Backend::default(),
+            audio_backend: Backend::default(),
             max_num_tokens: None,
             cache_dir: None,
         }
+    }
+
+    /// Set the main inference backend (text / prefill+decode).
+    #[must_use]
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.backend = backend;
+        self
+    }
+
+    /// Set the vision encoder backend. Models without a vision encoder
+    /// ignore this setting.
+    #[must_use]
+    pub fn vision_backend(mut self, backend: Backend) -> Self {
+        self.vision_backend = backend;
+        self
+    }
+
+    /// Set the audio encoder backend. Models without an audio encoder
+    /// ignore this setting.
+    #[must_use]
+    pub fn audio_backend(mut self, backend: Backend) -> Self {
+        self.audio_backend = backend;
+        self
     }
 
     /// Maximum number of tokens (context window size).
@@ -88,14 +142,16 @@ impl Engine {
     /// ```
     pub fn new(settings: EngineSettings) -> Result<Self> {
         let model_str = path_to_cstring(&settings.model_path)?;
+        let backend_str = CString::new(settings.backend.as_str()).unwrap();
+        let vision_str = CString::new(settings.vision_backend.as_str()).unwrap();
+        let audio_str = CString::new(settings.audio_backend.as_str()).unwrap();
 
-        // Backend strings: null means "auto-detect" for each modality.
         let raw_settings = unsafe {
             sys::litert_lm_engine_settings_create(
                 model_str.as_ptr(),
-                std::ptr::null(), // backend
-                std::ptr::null(), // vision backend
-                std::ptr::null(), // audio backend
+                backend_str.as_ptr(),
+                vision_str.as_ptr(),
+                audio_str.as_ptr(),
             )
         };
         if raw_settings.is_null() {

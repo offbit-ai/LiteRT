@@ -27,7 +27,7 @@ mod error;
 mod sampler;
 mod session;
 
-pub use engine::{Engine, EngineSettings};
+pub use engine::{Backend, Engine, EngineSettings};
 pub use error::{Error, Result};
 pub use sampler::{Sampler, SamplerParams};
 pub use session::Session;

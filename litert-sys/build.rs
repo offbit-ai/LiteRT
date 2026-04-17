@@ -92,6 +92,12 @@ const MACOS_ARM64: &[Prebuilt] = &[
         oid: "618efc1173194ca6658704a40890e98818cde4320b2e0f9013e959bd2c0268da",
         size: 22_264_864,
     },
+    // Required by litert-lm-sys's libLiteRtLmC at runtime.
+    Prebuilt {
+        name: "libGemmaModelConstraintProvider.dylib",
+        oid: "b584d9041af42fec0879593d747ba1bda139c25398f41c5c1c2c8dfa6c457008",
+        size: 9_214_976,
+    },
 ];
 
 const LINUX_X86_64: &[Prebuilt] = &[

@@ -28,6 +28,12 @@ default           = []
 # C API headers under `third_party/litert-lm-v<ver>/c/`. Requires libclang.
 generate-bindings = ["dep:bindgen"]
 
+[dependencies]
+# The LM engine shared lib depends on the base LiteRT runtime at load time.
+# This dep ensures litert-sys's libLiteRt is linked and its cache dir is
+# available via DEP_LITERT_LIB_DIR for rpath propagation.
+litert-sys = { workspace = true }
+
 [build-dependencies]
 bindgen    = { workspace = true, optional = true }
 ureq       = { workspace = true }

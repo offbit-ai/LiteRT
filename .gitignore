@@ -3,4 +3,4 @@ target/
 Cargo.lock
 .DS_Store
 
-.claude
+.claudedefault.profraw
