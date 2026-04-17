@@ -1,8 +1,11 @@
 name: Build libLiteRtLmC
 
-# Builds the LiteRT-LM C engine as a shared library from source.
-# Strategy: build the project normally (all static archives), then post-link
-# them into a single shared library. This avoids patching CMake targets.
+# Builds the LiteRT-LM C engine as a shared library using Bazel (the
+# upstream's primary build system). CMake was too fragile with its
+# ExternalProject dep chain; Bazel handles everything natively.
+#
+# Strategy: build //c:engine as a static archive via Bazel, then manually
+# link it (plus deps) into a shared library with the system linker.
 on:
   workflow_dispatch:
     inputs:
@@ -24,30 +27,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install build deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            cmake ninja-build g++ git
-
       - name: clone litert-lm
         run: |
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      # Use the OUTER CMakeLists.txt — it orchestrates ExternalProject deps
-      # (protobuf, abseil, flatbuffers, TFLite, etc.) in the right order.
-      # PIC flags are critical: every .a must be position-independent to
-      # link into a .so later.
-      - name: cmake configure (outer)
+      - name: bazel build C engine (static)
+        working-directory: /tmp/litert-lm
         run: |
-          cmake -S /tmp/litert-lm -B /tmp/litert-lm/build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_FLAGS="-fPIC" \
-                -DCMAKE_CXX_FLAGS="-fPIC" \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          bazelisk build //c:engine --compilation_mode=opt --copt=-fPIC \
+            --action_env=CC=gcc --action_env=CXX=g++ \
+            2>&1 | tail -30
 
-      - name: cmake build (full project)
-        run: cmake --build /tmp/litert-lm/build -j$(nproc)
+      - name: locate built artifacts
+        id: artifacts
+        working-directory: /tmp/litert-lm
+        run: |
+          echo "=== engine .a ==="
+          ENGINE_A=$(find bazel-bin/c -name '*.a' -type f | head -1)
+          echo "engine_a=$ENGINE_A" >> $GITHUB_OUTPUT
+          ls -la "$ENGINE_A" 2>/dev/null || echo "No .a found"
+
+          echo "=== all .a under bazel-bin ==="
+          find bazel-bin -name '*.a' -type f | wc -l
+          find bazel-bin -name '*.a' -type f | head -20
 
       - name: create version script
         run: |
@@ -61,22 +64,21 @@ jobs:
           EOF
 
       - name: post-link shared library
+        working-directory: /tmp/litert-lm
         run: |
-          BUILD=/tmp/litert-lm/build
+          ENGINE_A="${{ steps.artifacts.outputs.engine_a }}"
+          if [ -z "$ENGINE_A" ] || [ ! -f "$ENGINE_A" ]; then
+            echo "::error::Engine .a not found"
+            exit 1
+          fi
 
-          # The C engine static lib (our API surface)
-          ENGINE_A=$(find $BUILD -name 'libc_engine.a' -type f | head -1)
-          echo "engine lib: $ENGINE_A"
-
-          # All other static archives (deps)
-          ALL_A=$(find $BUILD -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          # Collect all static deps from bazel-bin
+          ALL_A=$(find bazel-bin -name '*.a' -type f ! -path "$ENGINE_A" | sort)
           echo "total .a files: $(echo "$ALL_A" | wc -l)"
 
-          # Link: whole-archive the engine (so all litert_lm_* symbols survive),
-          # regular-link the deps (only pull what's referenced).
           g++ -shared -o /tmp/libLiteRtLmC.so \
             -Wl,--version-script=/tmp/litert_lm_exports.map \
-            -Wl,--whole-archive $ENGINE_A -Wl,--no-whole-archive \
+            -Wl,--whole-archive "$ENGINE_A" -Wl,--no-whole-archive \
             $ALL_A \
             -Wl,--allow-multiple-definition \
             -lstdc++ -lpthread -ldl -lm
@@ -84,6 +86,8 @@ jobs:
           echo "=== output ==="
           ls -la /tmp/libLiteRtLmC.so
           echo "litert_lm_* symbols:"
+          nm -D --defined-only /tmp/libLiteRtLmC.so | grep 'litert_lm_' | head -10
+          echo "total litert_lm_* symbols:"
           nm -D --defined-only /tmp/libLiteRtLmC.so | grep -c 'litert_lm_'
 
       - uses: actions/upload-artifact@v4
@@ -99,47 +103,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: install build deps
-        run: brew install cmake ninja
-
       - name: clone litert-lm
         run: |
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: cmake configure (outer)
+      - name: bazel build C engine (static)
+        working-directory: /tmp/litert-lm
         run: |
-          cmake -S /tmp/litert-lm -B /tmp/litert-lm/build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          bazelisk build //c:engine --compilation_mode=opt \
+            2>&1 | tail -30
 
-      - name: cmake build (full project)
-        run: cmake --build /tmp/litert-lm/build -j$(sysctl -n hw.ncpu)
+      - name: locate built artifacts
+        id: artifacts
+        working-directory: /tmp/litert-lm
+        run: |
+          ENGINE_A=$(find bazel-bin/c -name '*.a' -type f | head -1)
+          echo "engine_a=$ENGINE_A" >> $GITHUB_OUTPUT
+          ls -la "$ENGINE_A" 2>/dev/null || echo "No .a found"
+          find bazel-bin -name '*.a' -type f | wc -l
 
       - name: create export list
         run: |
           grep -E 'LITERT_LM_C_API_EXPORT' /tmp/litert-lm/c/engine.h -A1 | \
             grep 'litert_lm_' | sed 's/.*\(litert_lm_[a-z_]*\).*/\1/' | \
             sed 's/^/_/' | sort -u > /tmp/litert_lm_exports.txt
-          echo "export count: $(wc -l < /tmp/litert_lm_exports.txt)"
-          cat /tmp/litert_lm_exports.txt
+          echo "exports: $(wc -l < /tmp/litert_lm_exports.txt)"
 
       - name: post-link shared library
+        working-directory: /tmp/litert-lm
         run: |
-          BUILD=/tmp/litert-lm/build
-
-          ENGINE_A=$(find $BUILD -name 'libc_engine.a' -type f | head -1)
-          echo "engine lib: $ENGINE_A"
-
-          ALL_A=$(find $BUILD -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          ENGINE_A="${{ steps.artifacts.outputs.engine_a }}"
+          ALL_A=$(find bazel-bin -name '*.a' -type f ! -path "$ENGINE_A" | sort)
           echo "total .a files: $(echo "$ALL_A" | wc -l)"
 
           clang++ -dynamiclib -o /tmp/libLiteRtLmC.dylib \
             -Wl,-exported_symbols_list,/tmp/litert_lm_exports.txt \
-            -Wl,-all_load $ENGINE_A \
+            -Wl,-all_load "$ENGINE_A" \
             $ALL_A \
             -framework Foundation -framework Metal -framework CoreFoundation \
-            -lstdc++ -lpthread -ldl -lm
+            -lstdc++ -lpthread -ldl -lm \
+            2>&1 | tail -20
 
           echo "=== output ==="
           ls -la /tmp/libLiteRtLmC.dylib
