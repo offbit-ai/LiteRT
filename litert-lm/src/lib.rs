@@ -23,11 +23,13 @@
 
 #![warn(missing_docs)]
 
+pub mod conversation;
 mod engine;
 mod error;
 mod sampler;
 mod session;
 
+pub use conversation::Conversation;
 pub use engine::{Backend, Engine, EngineSettings};
 pub use error::{Error, Result};
 pub use sampler::{Sampler, SamplerParams};

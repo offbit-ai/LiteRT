@@ -42,23 +42,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             .cache_dir(&cache_dir),
     )?;
 
-    let mut session = engine.create_session(
-        SamplerParams::default()
-            .top_p(0.95)
-            .temperature(0.7)
-            .seed(42),
-    )?;
+    let sampler = SamplerParams::default()
+        .top_p(0.95)
+        .temperature(0.7)
+        .seed(42);
 
     eprintln!("model: {MODEL_FILE}  backend: {backend:?}");
+
     if use_stream {
-        session.generate_stream(prompt, |chunk| {
+        // Conversation API: proper prompt template + token-by-token streaming
+        let mut conv = engine.create_conversation(sampler)?;
+        conv.send_message_stream(prompt, |chunk| {
             print!("{chunk}");
             use std::io::Write;
             std::io::stdout().flush().ok();
-            true
         })?;
         println!();
     } else {
+        // Session API: blocking, returns full response at once
+        let mut session = engine.create_session(sampler)?;
         let response = session.generate(prompt)?;
         println!("{response}");
     }

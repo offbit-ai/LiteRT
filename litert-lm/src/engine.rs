@@ -9,7 +9,7 @@ use std::{
 
 use litert_lm_sys as sys;
 
-use crate::{Error, Result, SamplerParams, Session};
+use crate::{conversation::Conversation, Error, Result, SamplerParams, Session};
 
 /// Inference backend for the LLM engine.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -195,12 +195,28 @@ impl Engine {
 
     /// Creates a new inference session with the given sampling parameters.
     ///
+    /// For streaming output, use [`Self::create_conversation`] instead.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::SessionCreationFailed`] if the runtime rejects the
     /// configuration.
     pub fn create_session(&self, params: SamplerParams) -> Result<Session> {
         Session::new(self.inner.clone(), params)
+    }
+
+    /// Creates a new conversation with proper prompt template handling.
+    ///
+    /// Unlike [`Session`], [`Conversation`] applies the model's chat template
+    /// (e.g. Qwen3's `<|im_start|>user\n...<|im_end|>`) and supports correct
+    /// token-by-token streaming.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SessionCreationFailed`] if the runtime rejects the
+    /// configuration.
+    pub fn create_conversation(&self, params: SamplerParams) -> Result<Conversation> {
+        Conversation::new(self.inner.clone(), params)
     }
 
     #[allow(dead_code)]
