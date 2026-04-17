@@ -2,46 +2,64 @@
 
 [![CI](https://github.com/offbit-ai/LiteRT/actions/workflows/ci.yml/badge.svg)](https://github.com/offbit-ai/LiteRT/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/litert.svg?label=litert)](https://crates.io/crates/litert)
+[![crates.io](https://img.shields.io/crates/v/litertlm.svg?label=litertlm)](https://crates.io/crates/litertlm)
 [![crates.io](https://img.shields.io/crates/v/litert-sys.svg?label=litert-sys)](https://crates.io/crates/litert-sys)
+[![crates.io](https://img.shields.io/crates/v/litert-lm-sys.svg?label=litert-lm-sys)](https://crates.io/crates/litert-lm-sys)
 [![docs.rs](https://img.shields.io/docsrs/litert?label=docs.rs%2Flitert)](https://docs.rs/litert)
+[![docs.rs](https://img.shields.io/docsrs/litertlm?label=docs.rs%2Flitertlm)](https://docs.rs/litertlm)
 [![MSRV](https://img.shields.io/badge/rustc-1.75%2B-blue.svg)](https://releases.rs/docs/1.75.0/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-informational.svg)](LICENSE)
 [![LiteRT](https://img.shields.io/badge/LiteRT-2.1.4-informational.svg)](https://github.com/google-ai-edge/LiteRT)
 
-Safe, zero-friction Rust bindings for [Google LiteRT] 2.x — the on-device
-machine-learning runtime formerly known as TensorFlow Lite. Add the crate to
-your `Cargo.toml` and `cargo build`. No Bazel, no CMake, no `libclang` on
-user machines.
+Safe, zero-friction Rust bindings for [Google LiteRT] 2.x — on-device ML
+inference and LLM text generation. Add a crate to `Cargo.toml` and
+`cargo build`. No Bazel, no CMake, no `libclang` on user machines.
 
 [Google LiteRT]: https://ai.google.dev/edge/litert
 
+### ML inference (`litert`)
+
 ```toml
 [dependencies]
-litert = "0.1"
+litert = "0.2"
 ```
 
 ```rust
 use litert::{CompilationOptions, CompiledModel, Environment, Model, TensorBuffer};
 
 let env = Environment::new()?;
-let model = Model::from_file("add_10x10.tflite")?;
-
-let sig = model.signature(0)?;
-let mut inputs: Vec<_> = (0..sig.input_count()?)
-    .map(|i| TensorBuffer::managed_host(&env, &sig.input_shape(i)?))
-    .collect::<Result<_, _>>()?;
-let mut outputs = vec![TensorBuffer::managed_host(&env, &sig.output_shape(0)?)?];
-
-{
-    let mut w = inputs[0].lock_for_write::<f32>()?;
-    w.copy_from_slice(&[1.0, 2.0, /* … */]);
-}
-
+let model = Model::from_file("mobilenet.tflite")?;
 let compiled = CompiledModel::new(env, model, &CompilationOptions::new()?)?;
-compiled.run(&mut inputs, &mut outputs)?;
-
-let out = outputs[0].lock_for_read::<f32>()?;
+// ... fill input buffers, compiled.run(...), read outputs ...
 # Ok::<(), litert::Error>(())
+```
+
+### LLM text generation (`litertlm`)
+
+```toml
+[dependencies]
+litertlm = "0.2"
+```
+
+```rust
+use litertlm::{Backend, Engine, EngineSettings, SamplerParams};
+
+let engine = Engine::new(
+    EngineSettings::new("Qwen3-0.6B.litertlm")
+        .backend(Backend::Gpu)
+        .max_num_tokens(512),
+)?;
+
+// Streaming (token-by-token)
+let mut conv = engine.create_conversation(SamplerParams::default().top_p(0.95))?;
+conv.send_message_stream("Explain Rust lifetimes", |chunk| {
+    print!("{chunk}");
+})?;
+
+// Or blocking
+let mut session = engine.create_session(SamplerParams::default().top_p(0.95))?;
+let response = session.generate("Explain Rust lifetimes")?;
+# Ok::<(), litertlm::Error>(())
 ```
 
 ## Why
@@ -56,18 +74,14 @@ let out = outputs[0].lock_for_read::<f32>()?;
 each by SHA-256, and downloads them into a user-level cache the first time
 `cargo build` runs. Your app links against that cached `libLiteRt.{so,dylib,dll}`.
 
-## Crates in the workspace
+## Crates
 
-| Crate           | What it is                                   | Status           |
-|-----------------|----------------------------------------------|------------------|
-| `litert-sys`    | Raw FFI against the LiteRT 2.x C API         | 0.1.x            |
-| `litert`        | Idiomatic safe wrappers                      | 0.1.x            |
-| `litert-lm-sys` | Raw FFI against LiteRT-LM (`c/engine.h`)     | stubbed, 0.2.0   |
-| `litertlm`      | Safe LLM-inference API                       | 0.2.x            |
-
-The LiteRT-LM side requires building a static C++ library from source with
-heavy transitive dependencies (abseil, protobuf, flatbuffers, nlohmann_json);
-it's deferred until a mirrored build-and-package pipeline exists.
+| Crate | What it is | crates.io |
+|-------|------------|-----------|
+| [`litert`](https://crates.io/crates/litert) | Safe ML inference wrappers (CompiledModel, TensorBuffer, GPU) | 0.2.x |
+| [`litertlm`](https://crates.io/crates/litertlm) | Safe LLM text generation (Engine, Session, Conversation streaming) | 0.2.x |
+| [`litert-sys`](https://crates.io/crates/litert-sys) | Raw FFI — LiteRT 2.x C API | 0.2.x |
+| [`litert-lm-sys`](https://crates.io/crates/litert-lm-sys) | Raw FFI — LiteRT-LM C engine API | 0.2.x |
 
 ## Platform support
 
