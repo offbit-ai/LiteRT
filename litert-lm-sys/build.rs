@@ -42,8 +42,8 @@ fn prebuilt_for(target: &str) -> Option<Prebuilt> {
         "aarch64-apple-darwin" => Prebuilt {
             url_filename: "libLiteRtLmC.dylib",
             local_name: "libLiteRtLmC.dylib",
-            sha256: "264bffe3e8491f473a6bba80cd6095a4b69905b4173f67f1b11e601369d198cf",
-            size: 28_862_032,
+            sha256: "616c71d3f52d7b6e7847cba2a3876890aeac993e27ec147dbf1c7de4fd786456",
+            size: 28_862_192,
         },
         _ => return None,
     })
