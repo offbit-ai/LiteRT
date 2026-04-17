@@ -40,6 +40,7 @@ jobs:
         run: |
           bazelisk build //c:engine //runtime/engine:litert_lm_main \
             --compilation_mode=opt --copt=-fPIC \
+            --copt=-Wno-changes-meaning \
             --action_env=CC=gcc --action_env=CXX=g++ \
             2>&1 | tail -30
 
@@ -86,10 +87,11 @@ jobs:
           ALL_A=$(find -L bazel-bin -name '*.a' ! -path "$ENGINE_A" 2>/dev/null | sort)
           echo "total dep .a files: $(echo "$ALL_A" | wc -l)"
 
+          # Whole-archive everything so cross-archive deps resolve; the
+          # version script limits the exported surface to litert_lm_*.
           g++ -shared -o /tmp/libLiteRtLmC.so \
             -Wl,--version-script=/tmp/litert_lm_exports.map \
-            -Wl,--whole-archive "$ENGINE_A" -Wl,--no-whole-archive \
-            $ALL_A \
+            -Wl,--whole-archive $ENGINE_A $ALL_A -Wl,--no-whole-archive \
             -Wl,--allow-multiple-definition \
             -lstdc++ -lpthread -ldl -lm
 
@@ -158,13 +160,15 @@ jobs:
           ALL_A=$(find -L bazel-bin -name '*.a' ! -path "$ENGINE_A" 2>/dev/null | sort)
           echo "total dep .a files: $(echo "$ALL_A" | wc -l)"
 
+          # -all_load everything so cross-archive deps resolve; the
+          # exported_symbols_list limits the visible surface.
           clang++ -dynamiclib -o /tmp/libLiteRtLmC.dylib \
             -Wl,-exported_symbols_list,/tmp/litert_lm_exports.txt \
-            -Wl,-all_load "$ENGINE_A" \
-            $ALL_A \
+            -Wl,-all_load \
+            $ENGINE_A $ALL_A \
             -framework Foundation -framework Metal -framework CoreFoundation \
             -lstdc++ -lpthread -ldl -lm \
-            2>&1 | tail -20
+            2>&1 | tail -30
 
           echo "=== output ==="
           ls -la /tmp/libLiteRtLmC.dylib
