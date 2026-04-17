@@ -1,6 +1,10 @@
 //! Inference sessions — stateful conversations with the model.
 
-use std::{ffi::CStr, ptr::NonNull, sync::Arc};
+use std::{
+    ffi::{c_char, c_void, CStr},
+    ptr::NonNull,
+    sync::Arc,
+};
 
 use litert_lm_sys as sys;
 
@@ -69,7 +73,7 @@ impl Session {
         let responses =
             unsafe { sys::litert_lm_session_generate_content(self.ptr.as_ptr(), &input, 1) };
         if responses.is_null() {
-            return Err(Error::GenerationFailed);
+            return Err(Error::GenerationFailed("returned null".into()));
         }
 
         let num = unsafe { sys::litert_lm_responses_get_num_candidates(responses) };
@@ -88,6 +92,93 @@ impl Session {
 
         unsafe { sys::litert_lm_responses_delete(responses) };
         Ok(text)
+    }
+
+    /// Generates a response with token-by-token streaming.
+    ///
+    /// `on_token` is called for each generated chunk. Return `true` to
+    /// continue, `false` to cancel early.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::GenerationFailed`] if the engine reports an error
+    /// via the callback.
+    pub fn generate_stream(
+        &mut self,
+        prompt: &str,
+        mut on_token: impl FnMut(&str) -> bool,
+    ) -> Result<()> {
+        use std::sync::{Condvar, Mutex};
+
+        struct State<'a> {
+            cb: &'a mut dyn FnMut(&str) -> bool,
+            error: Option<String>,
+            done: &'a Mutex<bool>,
+            cond: &'a Condvar,
+        }
+
+        unsafe extern "C" fn trampoline(
+            data: *mut c_void,
+            chunk: *const c_char,
+            is_final: bool,
+            error_msg: *const c_char,
+        ) {
+            let state = &mut *(data as *mut State);
+            if !error_msg.is_null() {
+                state.error = Some(CStr::from_ptr(error_msg).to_string_lossy().into_owned());
+                *state.done.lock().unwrap() = true;
+                state.cond.notify_one();
+                return;
+            }
+            if !chunk.is_null() {
+                let s = CStr::from_ptr(chunk).to_string_lossy();
+                (state.cb)(s.as_ref());
+            }
+            if is_final {
+                *state.done.lock().unwrap() = true;
+                state.cond.notify_one();
+            }
+        }
+
+        let input = sys::InputData {
+            type_: sys::kInputText,
+            data: prompt.as_ptr().cast(),
+            size: prompt.len(),
+        };
+
+        let done = Mutex::new(false);
+        let cond = Condvar::new();
+        let mut state = State {
+            cb: &mut on_token,
+            error: None,
+            done: &done,
+            cond: &cond,
+        };
+
+        let ret = unsafe {
+            sys::litert_lm_session_generate_content_stream(
+                self.ptr.as_ptr(),
+                &input,
+                1,
+                Some(trampoline),
+                &mut state as *mut State as *mut c_void,
+            )
+        };
+
+        if ret != 0 {
+            return Err(Error::GenerationFailed(format!("stream returned {ret}")));
+        }
+
+        // Block until the callback signals completion (is_final=true).
+        // The C API's stream function is non-blocking; without this wait
+        // the process would exit before generation finishes.
+        let guard = done.lock().unwrap();
+        let _guard = cond.wait_while(guard, |d| !*d).unwrap();
+
+        if let Some(err) = state.error {
+            return Err(Error::GenerationFailed(err));
+        }
+        Ok(())
     }
 }
 

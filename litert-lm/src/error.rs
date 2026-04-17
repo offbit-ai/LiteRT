@@ -14,8 +14,8 @@ pub enum Error {
     #[error("session creation failed (returned null)")]
     SessionCreationFailed,
 
-    #[error("generation failed (returned null)")]
-    GenerationFailed,
+    #[error("generation failed: {0}")]
+    GenerationFailed(String),
 
     #[error("null pointer returned from the LiteRT-LM C API")]
     NullPointer,

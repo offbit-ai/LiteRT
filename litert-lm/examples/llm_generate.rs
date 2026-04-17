@@ -4,6 +4,7 @@
 //!
 //! Usage:
 //!     cargo run --example llm_generate --release -- "Your prompt here"
+//!     cargo run --example llm_generate --release -- --stream "Your prompt"
 //!     cargo run --example llm_generate --release -- --cpu "Your prompt"
 //!     LITERT_LM_MODEL=/path/to/model.litertlm cargo run --example llm_generate --release
 
@@ -18,6 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let use_cpu = args.iter().any(|a| a == "--cpu");
+    let use_stream = args.iter().any(|a| a == "--stream");
     let prompt = args
         .iter()
         .find(|a| !a.starts_with("--"))
@@ -48,8 +50,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     eprintln!("model: {MODEL_FILE}  backend: {backend:?}");
-    let response = session.generate(prompt)?;
-    println!("{response}");
+    if use_stream {
+        session.generate_stream(prompt, |chunk| {
+            print!("{chunk}");
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+            true
+        })?;
+        println!();
+    } else {
+        let response = session.generate(prompt)?;
+        println!("{response}");
+    }
     Ok(())
 }
 
