@@ -32,10 +32,14 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: bazel build C engine (static)
+      # Build the full engine binary to ensure ALL transitive deps are
+      # materialized as .a files under bazel-bin, then also build the C API
+      # static archive that we need to whole-archive into our .so.
+      - name: bazel build
         working-directory: /tmp/litert-lm
         run: |
-          bazelisk build //c:engine --compilation_mode=opt --copt=-fPIC \
+          bazelisk build //c:engine //runtime/engine:litert_lm_main \
+            --compilation_mode=opt --copt=-fPIC \
             --action_env=CC=gcc --action_env=CXX=g++ \
             2>&1 | tail -30
 
@@ -44,13 +48,18 @@ jobs:
         working-directory: /tmp/litert-lm
         run: |
           echo "=== engine .a ==="
-          ENGINE_A=$(find bazel-bin/c -name '*.a' -type f | head -1)
+          ENGINE_A=$(find -L bazel-bin/c -name 'libengine.a' -o -name 'libc_engine.a' 2>/dev/null | head -1)
+          if [ -z "$ENGINE_A" ]; then
+            ENGINE_A=$(find -L bazel-bin/c -name '*.a' 2>/dev/null | head -1)
+          fi
           echo "engine_a=$ENGINE_A" >> $GITHUB_OUTPUT
-          ls -la "$ENGINE_A" 2>/dev/null || echo "No .a found"
+          echo "engine: $ENGINE_A"
+          ls -la "$ENGINE_A" 2>/dev/null || echo "WARNING: No engine .a found"
 
-          echo "=== all .a under bazel-bin ==="
-          find bazel-bin -name '*.a' -type f | wc -l
-          find bazel-bin -name '*.a' -type f | head -20
+          echo "=== all .a under bazel-bin (following symlinks) ==="
+          ALL_COUNT=$(find -L bazel-bin -name '*.a' 2>/dev/null | wc -l)
+          echo "total: $ALL_COUNT"
+          find -L bazel-bin -name '*.a' 2>/dev/null | head -30
 
       - name: create version script
         run: |
@@ -68,13 +77,14 @@ jobs:
         run: |
           ENGINE_A="${{ steps.artifacts.outputs.engine_a }}"
           if [ -z "$ENGINE_A" ] || [ ! -f "$ENGINE_A" ]; then
-            echo "::error::Engine .a not found"
+            echo "::error::Engine .a not found — listing what's in bazel-bin/c:"
+            find -L bazel-bin/c -type f 2>/dev/null | head -20
             exit 1
           fi
 
-          # Collect all static deps from bazel-bin
-          ALL_A=$(find bazel-bin -name '*.a' -type f ! -path "$ENGINE_A" | sort)
-          echo "total .a files: $(echo "$ALL_A" | wc -l)"
+          # Collect all static deps from bazel-bin (follow symlinks)
+          ALL_A=$(find -L bazel-bin -name '*.a' ! -path "$ENGINE_A" 2>/dev/null | sort)
+          echo "total dep .a files: $(echo "$ALL_A" | wc -l)"
 
           g++ -shared -o /tmp/libLiteRtLmC.so \
             -Wl,--version-script=/tmp/litert_lm_exports.map \
@@ -108,20 +118,25 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: bazel build C engine (static)
+      - name: bazel build
         working-directory: /tmp/litert-lm
         run: |
-          bazelisk build //c:engine --compilation_mode=opt \
+          bazelisk build //c:engine //runtime/engine:litert_lm_main \
+            --compilation_mode=opt \
             2>&1 | tail -30
 
       - name: locate built artifacts
         id: artifacts
         working-directory: /tmp/litert-lm
         run: |
-          ENGINE_A=$(find bazel-bin/c -name '*.a' -type f | head -1)
+          ENGINE_A=$(find -L bazel-bin/c -name 'libengine.a' -o -name 'libc_engine.a' 2>/dev/null | head -1)
+          if [ -z "$ENGINE_A" ]; then
+            ENGINE_A=$(find -L bazel-bin/c -name '*.a' 2>/dev/null | head -1)
+          fi
           echo "engine_a=$ENGINE_A" >> $GITHUB_OUTPUT
-          ls -la "$ENGINE_A" 2>/dev/null || echo "No .a found"
-          find bazel-bin -name '*.a' -type f | wc -l
+          echo "engine: $ENGINE_A"
+          ALL_COUNT=$(find -L bazel-bin -name '*.a' 2>/dev/null | wc -l)
+          echo "total .a: $ALL_COUNT"
 
       - name: create export list
         run: |
@@ -134,8 +149,14 @@ jobs:
         working-directory: /tmp/litert-lm
         run: |
           ENGINE_A="${{ steps.artifacts.outputs.engine_a }}"
-          ALL_A=$(find bazel-bin -name '*.a' -type f ! -path "$ENGINE_A" | sort)
-          echo "total .a files: $(echo "$ALL_A" | wc -l)"
+          if [ -z "$ENGINE_A" ] || [ ! -f "$ENGINE_A" ]; then
+            echo "::error::Engine .a not found"
+            find -L bazel-bin/c -type f 2>/dev/null | head -20
+            exit 1
+          fi
+
+          ALL_A=$(find -L bazel-bin -name '*.a' ! -path "$ENGINE_A" 2>/dev/null | sort)
+          echo "total dep .a files: $(echo "$ALL_A" | wc -l)"
 
           clang++ -dynamiclib -o /tmp/libLiteRtLmC.dylib \
             -Wl,-exported_symbols_list,/tmp/litert_lm_exports.txt \
