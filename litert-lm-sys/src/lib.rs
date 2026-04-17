@@ -3,8 +3,11 @@
     non_camel_case_types,
     non_snake_case,
     dead_code,
-    improper_ctypes
+    improper_ctypes,
+    clippy::useless_transmute,
+    clippy::transmute_int_to_bool,
+    clippy::missing_safety_doc
 )]
-#![doc = "Raw FFI bindings to LiteRT-LM. See the safe `litert-lm` crate for idiomatic Rust."]
+#![doc = "Raw FFI bindings to LiteRT-LM C API. Use the safe `litert-lm` crate for idiomatic Rust."]
 
-// Phase 4 will `include!(concat!(env!("OUT_DIR"), "/bindings.rs"))` here.
+include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
