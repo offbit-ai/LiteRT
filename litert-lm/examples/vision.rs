@@ -8,7 +8,7 @@
 
 use std::{error::Error, fs, io::Read, path::PathBuf};
 
-use litertlm::{Backend, Engine, EngineSettings, Input, SamplerParams};
+use litertlm::{Backend, Engine, EngineSettings, SamplerParams};
 
 const MODEL_REPO: &str = "litert-community/gemma-4-E2B-it-litert-lm";
 const MODEL_FILE: &str = "gemma-4-E2B-it.litertlm";
@@ -33,8 +33,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let image_bytes = fs::read(image_path)?;
-    eprintln!("image: {} ({} KB)", image_path, image_bytes.len() / 1024);
+    let image_size = fs::metadata(image_path)?.len();
+    eprintln!("image: {} ({} KB)", image_path, image_size / 1024);
 
     let model_path = match std::env::var("LITERT_LM_MODEL") {
         Ok(p) => PathBuf::from(p),
@@ -45,28 +45,52 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cache_dir = std::env::temp_dir().join("litert-lm-cache");
     fs::create_dir_all(&cache_dir)?;
 
-    eprintln!("loading {MODEL_FILE} on {backend:?}...");
+    eprintln!("loading {MODEL_FILE} (text: {backend:?}, vision: Cpu)...");
     let engine = Engine::new(
         EngineSettings::new(&model_path)
             .backend(backend)
-            .vision_backend(backend)
+            // Vision encoder runs on CPU to avoid ODR conflict between
+            // libLiteRtLmC.dylib and libLiteRtWebGpuAccelerator.dylib
+            // (both statically link absl → BlockingCounter crash on GPU).
+            .vision_backend(Backend::Cpu)
             .max_num_tokens(512)
             .cache_dir(&cache_dir),
     )?;
 
-    // Multimodal uses the Session API (InputData carries raw image bytes).
-    // The Conversation API only accepts JSON strings — no binary data.
-    let mut session =
-        engine.create_session(SamplerParams::default().top_p(0.95).temperature(0.7))?;
+    let mut conv =
+        engine.create_conversation(SamplerParams::default().top_p(0.95).temperature(0.7))?;
+
+    // Pass image as file path in the Conversation JSON content array.
+    // The engine's vision pipeline reads and decodes the file internally.
+    let message_json = format!(
+        r#"{{"role":"user","content":[{{"type":"image","path":{}}},{{"type":"text","text":{}}}]}}"#,
+        json_escape(image_path),
+        json_escape(prompt),
+    );
 
     eprintln!("prompt: {prompt}");
-    let response = session.generate_with_inputs(&[
-        Input::image(&image_bytes),
-        Input::ImageEnd,
-        Input::text(prompt),
-    ])?;
-    println!("{response}");
+    conv.send_raw_stream(&message_json, |chunk| {
+        print!("{chunk}");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+    })?;
+    println!();
     Ok(())
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn ensure_model() -> Result<PathBuf, Box<dyn Error>> {

@@ -82,11 +82,14 @@ impl Conversation {
             r#"{{"role":"user","content":[{{"type":"text","text":{}}}]}}"#,
             serde_json_escape(prompt)
         );
-        self.send_raw_message_stream(&message_json, on_token)
+        self.send_raw_stream(&message_json, on_token)
     }
 
-    /// Internal: sends a pre-formatted JSON message and streams the response.
-    fn send_raw_message_stream(
+    /// Sends a pre-formatted JSON message and streams the response.
+    ///
+    /// Use this when you need full control over the message JSON, e.g. for
+    /// multimodal inputs with image file paths.
+    pub fn send_raw_stream(
         &mut self,
         message_json: &str,
         mut on_token: impl FnMut(&str),
@@ -191,7 +194,7 @@ impl Conversation {
     ) -> Result<()> {
         let content_json = crate::input::inputs_to_content_json(inputs);
         let message_json = format!(r#"{{"role":"user","content":{content_json}}}"#);
-        self.send_raw_message_stream(&message_json, on_token)
+        self.send_raw_stream(&message_json, on_token)
     }
 
     /// Sends multimodal inputs and returns the full response (blocking).
