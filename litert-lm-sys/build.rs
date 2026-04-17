@@ -1,25 +1,53 @@
 //! Build script for litert-lm-sys.
 //!
-//! Same pattern as litert-sys: pre-generated bindings for the default path,
-//! optional `generate-bindings` feature for maintainers. The shared library
-//! (`libLiteRtLmC.{so,dylib,dll}`) is built from source in our CI and hosted
-//! as a mirrored release artifact. `build.rs` downloads + SHA-verifies it on
-//! first build.
+//! Downloads the pinned `libLiteRtLmC.{so,dylib}` shared library from our
+//! mirrored GitHub release, SHA-256-verifies it, caches it, and emits the
+//! linker directives. Same pattern as litert-sys.
 //!
 //! Escape hatches:
 //!   `LITERT_LM_LIB_DIR`     — directory containing the shared lib; skip download.
-//!   `LITERT_NO_DOWNLOAD`    — fail hard if the cache is empty (air-gapped CI).
+//!   `LITERT_NO_DOWNLOAD`    — fail hard if the cache is empty.
 //!   `LITERT_CACHE_DIR`      — override the cache root.
 
 use std::{
     env, fs,
+    io::Read,
     path::{Path, PathBuf},
 };
+
+use sha2::{Digest, Sha256};
 
 const LITERT_LM_VERSION: &str = "0.10.2";
 
 #[cfg(feature = "generate-bindings")]
 const LITERT_LM_HEADERS_VERSION: &str = "0.10.2";
+
+const MIRROR_BASE: &str = "https://github.com/offbit-ai/LiteRT/releases/download/litert-lm-v0.10.2";
+
+struct Prebuilt {
+    url_filename: &'static str,
+    local_name: &'static str,
+    sha256: &'static str,
+    size: u64,
+}
+
+fn prebuilt_for(target: &str) -> Option<Prebuilt> {
+    Some(match target {
+        "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => Prebuilt {
+            url_filename: "libLiteRtLmC.so",
+            local_name: "libLiteRtLmC.so",
+            sha256: "96ed380d49738d44180ff3215d32964a0c72e31724b3f18998362724425ab731",
+            size: 45_413_112,
+        },
+        "aarch64-apple-darwin" => Prebuilt {
+            url_filename: "libLiteRtLmC.dylib",
+            local_name: "libLiteRtLmC.dylib",
+            sha256: "264bffe3e8491f473a6bba80cd6095a4b69905b4173f67f1b11e601369d198cf",
+            size: 28_862_032,
+        },
+        _ => return None,
+    })
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -60,6 +88,7 @@ fn emit_bindings(_target: &str, out_dir: &Path) {
         .allowlist_type("Type")
         .allowlist_var("kLiteRtLm.*")
         .allowlist_var("kType.*|kTopK|kTopP|kGreedy|kTypeUnspecified")
+        .allowlist_var("kInput.*")
         .prepend_enum_name(false)
         .layout_tests(false)
         .derive_default(true)
@@ -105,37 +134,31 @@ fn locate_library(target: &str) -> Option<PathBuf> {
         return Some(dir);
     }
 
-    // 2) Check DEP_LITERT_LIB_DIR — if litert-sys already downloaded
-    //    libLiteRt.*, the LM engine links against that same runtime.
-    //    Forward the lib search path so the linker can resolve it.
+    // 2) Forward litert-sys lib dir so the linker can also find libLiteRt.
     if let Ok(litert_dir) = env::var("DEP_LITERT_LIB_DIR") {
         println!("cargo:rustc-link-search=native={litert_dir}");
     }
 
-    // 3) Download the LiteRT-LM shared lib from our mirror.
+    // 3) Download the mirrored shared lib.
+    let pb = match prebuilt_for(target) {
+        Some(p) => p,
+        None => {
+            println!(
+                "cargo:warning=litert-lm-sys: no prebuilt for target `{target}`. \
+                 Set LITERT_LM_LIB_DIR to a directory containing {lib}.",
+                lib = if target.contains("windows") {
+                    "LiteRtLmC.dll"
+                } else {
+                    "libLiteRtLmC.*"
+                }
+            );
+            return None;
+        }
+    };
+
     let cache_dir = cache_dir_for(target);
-
-    // TODO(0.2.0): once the CMake CI pipeline produces and mirrors
-    // libLiteRtLmC.{so,dylib,dll}, wire the download + SHA-verify
-    // logic here (same pattern as litert-sys).
-    //
-    // For now, if LITERT_LM_LIB_DIR isn't set and the cache is empty,
-    // we emit a warning but still let the crate compile (bindings-only
-    // mode). The link will fail at the final binary step, which is
-    // acceptable during the bootstrap phase.
-    if !cache_dir.join(lib_name(target)).exists() {
-        println!(
-            "cargo:warning=litert-lm-sys: libLiteRtLmC not found. Set \
-             LITERT_LM_LIB_DIR or wait for the mirrored build pipeline. \
-             The crate will compile but binaries will fail to link."
-        );
-    }
-
-    if cache_dir.is_dir() {
-        Some(cache_dir)
-    } else {
-        None
-    }
+    ensure_prebuilt(&pb, &cache_dir);
+    Some(cache_dir)
 }
 
 fn cache_dir_for(target: &str) -> PathBuf {
@@ -155,14 +178,65 @@ fn cache_dir_for(target: &str) -> PathBuf {
         .join(target)
 }
 
-fn lib_name(target: &str) -> &'static str {
-    if target.contains("windows") {
-        "LiteRtLmC.dll"
-    } else if target.contains("apple") {
-        "libLiteRtLmC.dylib"
-    } else {
-        "libLiteRtLmC.so"
+fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
+    fs::create_dir_all(cache_dir).expect("create cache dir");
+
+    let dest = cache_dir.join(pb.local_name);
+    let marker = cache_dir.join(format!("{}.verified", pb.local_name));
+    if dest.exists() && marker.exists() {
+        return;
     }
+
+    if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
+        panic!(
+            "litert-lm-sys: LITERT_NO_DOWNLOAD set but {} missing from {}",
+            pb.local_name,
+            cache_dir.display()
+        );
+    }
+
+    let url = format!("{MIRROR_BASE}/{}", pb.url_filename);
+    println!(
+        "cargo:warning=litert-lm-sys: downloading {} ({} bytes) from mirror (first build only)",
+        pb.local_name, pb.size,
+    );
+
+    let mut buf = Vec::with_capacity(pb.size as usize);
+    ureq::get(&url)
+        .call()
+        .unwrap_or_else(|e| panic!("GET {url}: {e}"))
+        .into_reader()
+        .read_to_end(&mut buf)
+        .unwrap_or_else(|e| panic!("read {}: {e}", pb.local_name));
+
+    if buf.len() as u64 != pb.size {
+        panic!(
+            "litert-lm-sys: size mismatch for {}: expected {}, got {}",
+            pb.local_name,
+            pb.size,
+            buf.len()
+        );
+    }
+
+    let hash = hex(&Sha256::digest(&buf));
+    if hash != pb.sha256 {
+        panic!(
+            "litert-lm-sys: SHA-256 mismatch for {}: expected {}, got {hash}",
+            pb.local_name, pb.sha256
+        );
+    }
+
+    fs::write(&dest, &buf).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
+    fs::write(&marker, pb.sha256).expect("write verified marker");
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        write!(&mut s, "{b:02x}").unwrap();
+    }
+    s
 }
 
 // ---------------------------------------------------------------------------
@@ -177,11 +251,7 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
         println!("cargo:lib_dir={dir}");
     }
 
-    // The LiteRT-LM C engine lib.
     println!("cargo:rustc-link-lib=dylib=LiteRtLmC");
-
-    // Also depends on the base LiteRT runtime (linked by litert-sys).
-    println!("cargo:rustc-link-lib=dylib=LiteRt");
 
     if target.contains("apple") {
         println!("cargo:rustc-link-lib=framework=Foundation");
