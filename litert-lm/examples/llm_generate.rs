@@ -1,60 +1,38 @@
 //! End-to-end LLM text generation with LiteRT-LM.
 //!
-//! Downloads a `.litertlm` model on first run and generates a short response.
-//! Demonstrates the full Engine → Session → generate pipeline.
+//! Downloads Qwen3-0.6B on first run and generates a response.
 //!
-//! Run with:
-//!     cargo run --example llm_generate --release
-//!
-//! Use Qwen3 instead of the default Gemma:
-//!     cargo run --example llm_generate --release -- --qwen
-//!
-//! Use a local model:
+//! Usage:
+//!     cargo run --example llm_generate --release -- "Your prompt here"
+//!     cargo run --example llm_generate --release -- --cpu "Your prompt"
 //!     LITERT_LM_MODEL=/path/to/model.litertlm cargo run --example llm_generate --release
 
 use std::{error::Error, fs, io::Read, path::PathBuf};
 
 use litert_lm::{Backend, Engine, EngineSettings, SamplerParams};
 
-struct ModelInfo {
-    repo: &'static str,
-    file: &'static str,
-    label: &'static str,
-}
-
-const GEMMA_270M: ModelInfo = ModelInfo {
-    repo: "litert-community/Qwen3-0.6B",
-    file: "Qwen3-0.6B.litertlm",
-    label: "Qwen3 0.6B (~586 MB, public)",
-};
-
-const QWEN3_06B: ModelInfo = ModelInfo {
-    repo: "litert-community/Qwen3-0.6B",
-    file: "Qwen3-0.6B.litertlm",
-    label: "Qwen3 0.6B (~586 MB)",
-};
+const MODEL_REPO: &str = "litert-community/Qwen3-0.6B";
+const MODEL_FILE: &str = "Qwen3-0.6B.litertlm";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    let use_qwen = args.iter().any(|a| a == "--qwen");
-    let model_info = if use_qwen { &QWEN3_06B } else { &GEMMA_270M };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    let use_cpu = args.iter().any(|a| a == "--cpu");
+    let prompt = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .map(String::as_str)
+        .unwrap_or("Explain Rust lifetimes in one sentence.");
 
     let model_path = match std::env::var("LITERT_LM_MODEL") {
         Ok(p) => PathBuf::from(p),
-        Err(_) => ensure_model(model_info)?,
+        Err(_) => ensure_model()?,
     };
 
-    println!("model: {} ({})", model_path.display(), model_info.label);
-    println!("loading engine...");
-
-    let backend = if args.iter().any(|a| a == "--cpu") {
-        Backend::Cpu
-    } else {
-        Backend::Gpu
-    };
-    println!("backend: {backend:?}");
+    let backend = if use_cpu { Backend::Cpu } else { Backend::Gpu };
     let cache_dir = std::env::temp_dir().join("litert-lm-cache");
     fs::create_dir_all(&cache_dir)?;
+
     let engine = Engine::new(
         EngineSettings::new(&model_path)
             .backend(backend)
@@ -62,10 +40,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             .cache_dir(&cache_dir),
     )?;
 
-    println!("creating session...");
-    // Use TopP (nucleus) sampling — matches the model's own metadata and
-    // is supported on both CPU and GPU backends. TopK is not yet implemented
-    // on CPU upstream.
     let mut session = engine.create_session(
         SamplerParams::default()
             .top_p(0.95)
@@ -73,32 +47,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             .seed(42),
     )?;
 
-    let prompt = "Explain Rust lifetimes in one sentence.";
-    println!("prompt: {prompt}");
-    println!("generating...\n");
-
+    eprintln!("model: {MODEL_FILE}  backend: {backend:?}");
     let response = session.generate(prompt)?;
     println!("{response}");
-
     Ok(())
 }
 
-fn ensure_model(info: &ModelInfo) -> Result<PathBuf, Box<dyn Error>> {
+fn ensure_model() -> Result<PathBuf, Box<dyn Error>> {
     let cache_dir = std::env::temp_dir().join("litert-lm-examples");
     fs::create_dir_all(&cache_dir)?;
 
-    let model_path = cache_dir.join(info.file);
+    let model_path = cache_dir.join(MODEL_FILE);
     if model_path.exists() {
         return Ok(model_path);
     }
 
-    let url = format!(
-        "https://huggingface.co/{}/resolve/main/{}",
-        info.repo, info.file
-    );
-    eprintln!("litert-lm-examples: downloading {}", info.label);
-    eprintln!("from: {url}");
-    eprintln!("(one-time download, caching to {})", cache_dir.display());
+    let url = format!("https://huggingface.co/{MODEL_REPO}/resolve/main/{MODEL_FILE}");
+    eprintln!("downloading {MODEL_FILE} (~586 MB, one-time)");
 
     let mut buf = Vec::new();
     ureq::get(&url)
@@ -107,6 +72,6 @@ fn ensure_model(info: &ModelInfo) -> Result<PathBuf, Box<dyn Error>> {
         .read_to_end(&mut buf)?;
 
     fs::write(&model_path, &buf)?;
-    eprintln!("saved ({} MB)", buf.len() / 1_048_576);
+    eprintln!("cached to {}", model_path.display());
     Ok(model_path)
 }

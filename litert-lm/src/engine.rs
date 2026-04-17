@@ -39,10 +39,10 @@ impl Backend {
 /// # Example
 ///
 /// ```no_run
-/// use litert_lm::EngineSettings;
+/// use litert_lm::{Backend, EngineSettings};
 ///
-/// let settings = EngineSettings::new("gemma2-2b-it.litertlm")
-///     .backend("gpu")
+/// let settings = EngineSettings::new("model.litertlm")
+///     .backend(Backend::Gpu)
 ///     .max_num_tokens(1024)
 ///     .cache_dir("/tmp/litert-lm-cache");
 /// ```

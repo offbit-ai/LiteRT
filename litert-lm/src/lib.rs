@@ -1,22 +1,23 @@
 //! Safe Rust bindings to LiteRT-LM — Google's on-device LLM inference engine.
 //!
 //! ```no_run
-//! use litert_lm::{Engine, EngineSettings, Session, SamplerParams};
+//! use litert_lm::{Backend, Engine, EngineSettings, SamplerParams};
 //!
 //! # fn main() -> litert_lm::Result<()> {
 //! let engine = Engine::new(
-//!     EngineSettings::new("gemma2-2b-it.litertlm")
-//!         .max_num_tokens(1024),
+//!     EngineSettings::new("model.litertlm")
+//!         .backend(Backend::Gpu)
+//!         .max_num_tokens(512),
 //! )?;
 //!
 //! let mut session = engine.create_session(
 //!     SamplerParams::default()
-//!         .top_k(40)
-//!         .temperature(0.8),
+//!         .top_p(0.95)
+//!         .temperature(0.7),
 //! )?;
 //!
 //! let response = session.generate("Explain Rust lifetimes briefly")?;
-//! println!("{}", response);
+//! println!("{response}");
 //! # Ok(()) }
 //! ```
 
