@@ -34,16 +34,19 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: cmake configure
+      # Use the OUTER CMakeLists.txt — it orchestrates ExternalProject deps
+      # (protobuf, abseil, flatbuffers, TFLite, etc.) in the right order.
+      # PIC flags are critical: every .a must be position-independent to
+      # link into a .so later.
+      - name: cmake configure (outer)
         run: |
-          cmake -S /tmp/litert-lm/cmake/packages/litert_lm \
-                -B /tmp/litert-lm/build \
-                -G Ninja \
+          cmake -S /tmp/litert-lm -B /tmp/litert-lm/build \
                 -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-                -DLITERTLM_PROJECT_ROOT=/tmp/litert-lm
+                -DCMAKE_C_FLAGS="-fPIC" \
+                -DCMAKE_CXX_FLAGS="-fPIC" \
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
-      - name: cmake build (all static targets)
+      - name: cmake build (full project)
         run: cmake --build /tmp/litert-lm/build -j$(nproc)
 
       - name: create version script
@@ -59,19 +62,19 @@ jobs:
 
       - name: post-link shared library
         run: |
-          cd /tmp/litert-lm/build
+          BUILD=/tmp/litert-lm/build
 
           # The C engine static lib (our API surface)
-          ENGINE_A=$(find . -name 'libc_engine.a' -type f | head -1)
+          ENGINE_A=$(find $BUILD -name 'libc_engine.a' -type f | head -1)
           echo "engine lib: $ENGINE_A"
 
           # All other static archives (deps)
-          ALL_A=$(find . -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          ALL_A=$(find $BUILD -name '*.a' -type f ! -name 'libc_engine.a' | sort)
           echo "total .a files: $(echo "$ALL_A" | wc -l)"
 
           # Link: whole-archive the engine (so all litert_lm_* symbols survive),
           # regular-link the deps (only pull what's referenced).
-          g++ -shared -o libLiteRtLmC.so \
+          g++ -shared -o /tmp/libLiteRtLmC.so \
             -Wl,--version-script=/tmp/litert_lm_exports.map \
             -Wl,--whole-archive $ENGINE_A -Wl,--no-whole-archive \
             $ALL_A \
@@ -79,14 +82,14 @@ jobs:
             -lstdc++ -lpthread -ldl -lm
 
           echo "=== output ==="
-          ls -la libLiteRtLmC.so
+          ls -la /tmp/libLiteRtLmC.so
           echo "litert_lm_* symbols:"
-          nm -D --defined-only libLiteRtLmC.so | grep -c 'litert_lm_'
+          nm -D --defined-only /tmp/libLiteRtLmC.so | grep -c 'litert_lm_'
 
       - uses: actions/upload-artifact@v4
         with:
           name: libLiteRtLmC-linux-x86_64
-          path: /tmp/litert-lm/build/libLiteRtLmC.so
+          path: /tmp/libLiteRtLmC.so
           if-no-files-found: error
 
   build-macos-arm64:
@@ -104,16 +107,13 @@ jobs:
           git clone --depth=1 --branch=${{ env.LITERT_LM_TAG }} \
             https://github.com/google-ai-edge/litert-lm.git /tmp/litert-lm
 
-      - name: cmake configure
+      - name: cmake configure (outer)
         run: |
-          cmake -S /tmp/litert-lm/cmake/packages/litert_lm \
-                -B /tmp/litert-lm/build \
-                -G Ninja \
+          cmake -S /tmp/litert-lm -B /tmp/litert-lm/build \
                 -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-                -DLITERTLM_PROJECT_ROOT=/tmp/litert-lm
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
-      - name: cmake build (all static targets)
+      - name: cmake build (full project)
         run: cmake --build /tmp/litert-lm/build -j$(sysctl -n hw.ncpu)
 
       - name: create export list
@@ -126,15 +126,15 @@ jobs:
 
       - name: post-link shared library
         run: |
-          cd /tmp/litert-lm/build
+          BUILD=/tmp/litert-lm/build
 
-          ENGINE_A=$(find . -name 'libc_engine.a' -type f | head -1)
+          ENGINE_A=$(find $BUILD -name 'libc_engine.a' -type f | head -1)
           echo "engine lib: $ENGINE_A"
 
-          ALL_A=$(find . -name '*.a' -type f ! -name 'libc_engine.a' | sort)
+          ALL_A=$(find $BUILD -name '*.a' -type f ! -name 'libc_engine.a' | sort)
           echo "total .a files: $(echo "$ALL_A" | wc -l)"
 
-          clang++ -dynamiclib -o libLiteRtLmC.dylib \
+          clang++ -dynamiclib -o /tmp/libLiteRtLmC.dylib \
             -Wl,-exported_symbols_list,/tmp/litert_lm_exports.txt \
             -Wl,-all_load $ENGINE_A \
             $ALL_A \
@@ -142,12 +142,12 @@ jobs:
             -lstdc++ -lpthread -ldl -lm
 
           echo "=== output ==="
-          ls -la libLiteRtLmC.dylib
+          ls -la /tmp/libLiteRtLmC.dylib
           echo "litert_lm_* symbols:"
-          nm -gU libLiteRtLmC.dylib | grep -c 'litert_lm_'
+          nm -gU /tmp/libLiteRtLmC.dylib | grep -c 'litert_lm_'
 
       - uses: actions/upload-artifact@v4
         with:
           name: libLiteRtLmC-macos-arm64
-          path: /tmp/litert-lm/build/libLiteRtLmC.dylib
+          path: /tmp/libLiteRtLmC.dylib
           if-no-files-found: error
