@@ -1,0 +1,43 @@
+diff --git a/litert/CMakeLists.txt b/litert/CMakeLists.txt
+index d61c4f2..1b1fa6d 100644
+--- a/litert/CMakeLists.txt
++++ b/litert/CMakeLists.txt
+@@ -44,6 +44,16 @@ add_compile_options(
+ )
+ add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+ 
++# Under emscripten, flatbuffers' CMake build defines
++# FLATBUFFERS_LOCALE_INDEPENDENT=0 because emcc's libc lacks strtof_l. The
++# flatbuffers header (`base.h`) otherwise auto-detects __unix__ and tries to
++# define it as 1, causing a link error on `ClassicLocale::instance_` (defined
++# in util.cpp only when LOCALE_INDEPENDENT > 0). Force =0 globally so all
++# consumers match the library.
++if(EMSCRIPTEN)
++    add_compile_definitions(FLATBUFFERS_LOCALE_INDEPENDENT=0)
++endif()
++
+ # Cmake flattens the transitive public and interface link to emit the final link
+ # command. Which will trigger a warning on Apple platforms (ld64 still dedups
+ # those archives correctly) For more details, see
+@@ -194,6 +204,21 @@ include_directories(
+ 
+ list(APPEND CMAKE_MODULE_PATH "${TFLITE_SOURCE_DIR}/tools/cmake/modules")
+ 
++# When cross-compiling to wasm32-unknown-emscripten there's no system OpenCL
++# framework, but litert/runtime/open_cl_memory.h unconditionally includes
++# <CL/cl.h>. Fetch the Khronos headers so the types are visible at compile
++# time; the actual OpenCL implementation is gated by LITERT_HAS_OPENCL_SUPPORT
++# and never invoked on platforms without OpenCL at runtime.
++if(EMSCRIPTEN AND NOT EXISTS "${CMAKE_BINARY_DIR}/opencl_headers/CL/cl.h")
++    include(FetchContent)
++    FetchContent_Declare(opencl_headers
++        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
++        GIT_TAG        v2024.05.08
++        GIT_SHALLOW    TRUE
++        SOURCE_DIR     ${CMAKE_BINARY_DIR}/opencl_headers)
++    FetchContent_Populate(opencl_headers)
++endif()
++
+ if(EXISTS "${CMAKE_BINARY_DIR}/opencl_headers")
+     include_directories(${CMAKE_BINARY_DIR}/opencl_headers)
+ endif()

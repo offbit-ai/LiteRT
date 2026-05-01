@@ -53,6 +53,15 @@ enum DistKind {
         abi: &'static str,
         outputs: &'static [&'static str],
     },
+    /// WASM targets: a tar.gz on the LiteRT-rs GitHub release (built by the
+    /// `build-litert-wasm.yml` workflow). Contains static archives (`.a`)
+    /// from a CMake+emscripten build of LiteRT v2.1.4. The list of `-lstatic`
+    /// directives to emit lives in `WASM32_EMSCRIPTEN_LIBS`.
+    WasmTarball {
+        url: &'static str,
+        oid: &'static str,
+        size: u64,
+    },
 }
 
 struct TargetSpec {
@@ -154,6 +163,24 @@ const WINDOWS_X86_64: &[Prebuilt] = &[
     },
 ];
 
+// WASM static-archive bundle produced by `.github/workflows/build-litert-wasm.yml`
+// (CMake+emscripten build of LiteRT v2.1.4 + our `wasm-patches/`). Contains
+// ~88 `.a` files (litert C/C++ API, runtime, TFLite, XNNPACK, abseil,
+// flatbuffers, gemmlowp, cpuinfo, pthreadpool — total ~15 MB extracted).
+//
+// At link time we glob the cache dir and emit `-l static=<name>` for every
+// `lib<name>.a` we find — the upstream build's archive surface evolves over
+// time, and a static allowlist would rot. wasm-ld dead-strips unused syms.
+//
+// TODO(0.3.0-rc): replace placeholder oid/size after the GitHub Actions
+// workflow has uploaded the artifact and we've recorded the SHA-256.
+const WASM32_EMSCRIPTEN_TARBALL_URL: &str =
+    "https://github.com/offbit-ai/LiteRT/releases/download/wasm-prebuilt-v2.1.4/\
+     libLiteRt-wasm32-emscripten.tar.gz";
+const WASM32_EMSCRIPTEN_OID: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+const WASM32_EMSCRIPTEN_SIZE: u64 = 0;
+
 fn target_spec(target: &str) -> Option<TargetSpec> {
     let dist = match target {
         "aarch64-apple-darwin" => DistKind::LiteRtLmLfs {
@@ -179,6 +206,11 @@ fn target_spec(target: &str) -> Option<TargetSpec> {
         "x86_64-linux-android" => DistKind::MavenAar {
             abi: "x86_64",
             outputs: ANDROID_OUTPUTS,
+        },
+        "wasm32-unknown-emscripten" => DistKind::WasmTarball {
+            url: WASM32_EMSCRIPTEN_TARBALL_URL,
+            oid: WASM32_EMSCRIPTEN_OID,
+            size: WASM32_EMSCRIPTEN_SIZE,
         },
         _ => return None,
     };
@@ -318,7 +350,58 @@ fn ensure_prebuilts(spec: &TargetSpec, cache_dir: &Path) {
             files,
         } => ensure_lfs_prebuilts(upstream_dir, files, cache_dir),
         DistKind::MavenAar { abi, outputs } => ensure_aar_prebuilts(abi, outputs, cache_dir),
+        DistKind::WasmTarball { url, oid, size } => ensure_wasm_tarball(url, oid, *size, cache_dir),
     }
+}
+
+fn ensure_wasm_tarball(url: &str, oid: &str, size: u64, cache_dir: &Path) {
+    if oid.chars().all(|c| c == '0') {
+        panic!(
+            "litert-sys: wasm32-unknown-emscripten prebuilt not yet published.\n\
+             Run the `build-litert-wasm.yml` GitHub Actions workflow, then update\n\
+             WASM32_EMSCRIPTEN_OID/SIZE in litert-sys/build.rs from the recorded\n\
+             SHA-256. Or set LITERT_LIB_DIR to a local build (see \
+             wasm-patches/litert-v2.1.4/).",
+        );
+    }
+    let marker = cache_dir.join(".wasm-tarball.verified");
+    if marker.exists() && fs::read_to_string(&marker).ok().as_deref() == Some(oid) {
+        return; // Already extracted and verified.
+    }
+    assert_downloads_allowed(
+        cache_dir,
+        std::iter::once("libLiteRt-wasm32-emscripten.tar.gz"),
+    );
+
+    println!(
+        "cargo:warning=litert-sys: downloading WASM static-archive bundle \
+         {url} into {} (first build only)",
+        cache_dir.display(),
+    );
+
+    let mut buf = Vec::with_capacity(size as usize);
+    ureq::get(url)
+        .call()
+        .unwrap_or_else(|e| panic!("GET {url} failed: {e}"))
+        .into_reader()
+        .read_to_end(&mut buf)
+        .unwrap_or_else(|e| panic!("read tarball: {e}"));
+    if buf.len() as u64 != size {
+        panic!(
+            "litert-sys: WASM tarball size mismatch: expected {size}, got {}",
+            buf.len()
+        );
+    }
+    let hash = hex(&Sha256::digest(&buf));
+    if hash != oid {
+        panic!("litert-sys: WASM tarball SHA-256 mismatch: expected {oid}, got {hash}");
+    }
+    let decoder = flate2::read::GzDecoder::new(buf.as_slice());
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(cache_dir)
+        .unwrap_or_else(|e| panic!("extract tarball: {e}"));
+    fs::write(&marker, oid).expect("write wasm tarball marker");
 }
 
 fn ensure_lfs_prebuilts(upstream_dir: &str, files: &[Prebuilt], cache_dir: &Path) {
@@ -561,8 +644,39 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
     if let Some(dir) = lib_dir {
         let dir = dir.display();
         println!("cargo:rustc-link-search=native={dir}");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+        if target != "wasm32-unknown-emscripten" {
+            // wasm-ld doesn't understand -rpath; emcc rejects it as well.
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+        }
         println!("cargo:lib_dir={dir}");
+    }
+
+    if target == "wasm32-unknown-emscripten" {
+        // Glob lib*.a under the lib_dir (or LITERT_LIB_DIR) and emit a
+        // -lstatic for each. wasm-ld will dead-strip unreferenced syms, so
+        // listing all archives is harmless. Roots first (litert) helps the
+        // linker resolve faster but isn't required for correctness.
+        if let Some(dir) = lib_dir {
+            let mut libs: Vec<String> = fs::read_dir(dir)
+                .expect("read lib_dir for wasm")
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    name.strip_prefix("lib")
+                        .and_then(|n| n.strip_suffix(".a"))
+                        .map(str::to_owned)
+                })
+                .collect();
+            // Ordering: ensure litert_* roots come first so wasm-ld
+            // touches them before transitive deps.
+            libs.sort_by_key(|n| !n.starts_with("litert"));
+            for lib in libs {
+                println!("cargo:rustc-link-lib=static={lib}");
+            }
+        }
+        // emscripten ships libc++ in its sysroot.
+        println!("cargo:rustc-link-lib=c++");
+        return;
     }
 
     println!("cargo:rustc-link-lib=dylib=LiteRt");

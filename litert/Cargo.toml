@@ -26,9 +26,13 @@ authors.workspace       = true
 [dependencies]
 litert-sys = { workspace = true }
 thiserror  = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = { workspace = true }
 
-[dev-dependencies]
+# Used by examples that download models — only on native targets.
+# Examples gated to wasm32 (e.g. add_wasm) do not pull these in.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 ureq   = { workspace = true }
 tar    = { workspace = true }
 flate2 = { workspace = true }

@@ -6,6 +6,40 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — WASM (browser + server) support for `litert-sys` / `litert`
+
+First-class `wasm32-unknown-emscripten` target for the base TFLite inference
+layer. Build a `.wasm` from Rust that runs in browsers (via the emscripten
+JS shim), Node.js, or wasmtime. CPU-only via TFLite + XNNPACK; GPU + LLM
+deferred.
+
+- **`litert-sys`** — new `DistKind::WasmTarball` variant downloads a
+  SHA-pinned tarball of static archives produced by the new
+  `build-litert-wasm.yml` GitHub Actions workflow (CMake+emscripten build of
+  LiteRT v2.1.4 + our `wasm-patches/`). build.rs globs `lib*.a` from the
+  cache and emits `cargo:rustc-link-lib=static=…` for each — wasm-ld
+  dead-strips unreferenced symbols.
+- **`litert`** — `set_global_log_severity` returns `Error::Unsupported` on
+  WASM (libloading dlopen isn't available; `libLiteRt.a` doesn't export the
+  logger-control symbols anyway). `libloading` dependency is gated to
+  non-WASM via `[target.'cfg(...)']` so users on WASM don't pay for it.
+- **Patches** — two minimal CMake changes to upstream LiteRT v2.1.4
+  (`wasm-patches/litert-v2.1.4/`): FetchContent OpenCL headers (so
+  `open_cl_memory.cc` compiles even though OpenCL isn't called at runtime),
+  and force `FLATBUFFERS_LOCALE_INDEPENDENT=0` globally to match the
+  flatbuffers library's emcc build.
+- **Example** — `litert/examples/add_wasm.rs` builds a 12 MB `.wasm` with
+  emscripten JS glue. **Verified end-to-end** locally on macOS arm64 with
+  emsdk 5.0.7: `node add_wasm.js` (with `-sNODERAWFS=1` link flag) loads
+  the bundled `add_10x10.tflite`, runs inference, and prints the correct
+  element-wise sums (`output[i] = 100 + 2i`).
+
+`litertlm` and `litert-lm-sys` remain desktop-only this release. WASM for
+those is deferred to 0.4.0 — the LiteRT-LM CMake orchestrator has a
+prebuild-stage bug that inherits emcmake env when it shouldn't, plus the
+transitive C++ dep chain (sentencepiece, tokenizers-cpp, antlr4) needs
+patches we haven't authored yet. See `wasm-patches/litert-lm-v0.10.2/`.
+
 ## [0.2.1] — Multimodal vision + streaming fixes
 
 - **Vision inference** via `Conversation::send_raw_stream` with image file

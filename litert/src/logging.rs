@@ -14,12 +14,10 @@
 //! [`set_global_log_severity`] returns [`Error::Unsupported`] rather than a
 //! link error, and LiteRT continues to log at its default verbosity.
 
-use std::sync::OnceLock;
-
-use libloading::Symbol;
-use litert_sys as sys;
-
 use crate::{Error, Result};
+
+#[cfg(not(target_arch = "wasm32"))]
+use {libloading::Symbol, litert_sys as sys, std::sync::OnceLock};
 
 /// Minimum severity of a log message that LiteRT will emit.
 ///
@@ -42,6 +40,7 @@ pub enum LogSeverity {
 }
 
 impl LogSeverity {
+    #[cfg(not(target_arch = "wasm32"))]
     fn to_raw(self) -> sys::LiteRtLogSeverity {
         match self {
             Self::Debug => sys::kLiteRtLogSeverityDebug,
@@ -80,6 +79,7 @@ impl LogSeverity {
 /// // logger-control symbols).
 /// let _ = set_global_log_severity(LogSeverity::Error);
 /// ```
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_global_log_severity(severity: LogSeverity) -> Result<()> {
     let hooks = logger_hooks().ok_or(Error::Unsupported("logger-control symbols"))?;
     let logger = unsafe { (hooks.get_default)() };
@@ -89,11 +89,22 @@ pub fn set_global_log_severity(severity: LogSeverity) -> Result<()> {
     crate::check(unsafe { (hooks.set_min_severity)(logger, severity.to_raw()) })
 }
 
+/// Sets the minimum severity of LiteRT's default logger.
+///
+/// On `wasm32-unknown-emscripten` `libLiteRt.a` is linked statically and the
+/// logger-control symbols are not exported, so this always returns
+/// [`Error::Unsupported`]. The runtime's default log level stays in place.
+#[cfg(target_arch = "wasm32")]
+pub fn set_global_log_severity(_severity: LogSeverity) -> Result<()> {
+    Err(Error::Unsupported("logger-control symbols (WASM build)"))
+}
+
 // --------------------------------------------------------------------------
-// Runtime symbol resolution
+// Runtime symbol resolution (non-WASM only — WASM uses static linking and
+// can't dlopen)
 // --------------------------------------------------------------------------
 
-/// Function pointers resolved at runtime from `libLiteRt`.
+#[cfg(not(target_arch = "wasm32"))]
 struct LoggerHooks {
     get_default: unsafe extern "C" fn() -> sys::LiteRtLogger,
     set_min_severity:
@@ -102,14 +113,18 @@ struct LoggerHooks {
 
 // Safety: the resolved function pointers are immutable and thread-safe to
 // call; libloading-owned Library handles are Sync on platforms we target.
+#[cfg(not(target_arch = "wasm32"))]
 unsafe impl Sync for LoggerHooks {}
+#[cfg(not(target_arch = "wasm32"))]
 unsafe impl Send for LoggerHooks {}
 
+#[cfg(not(target_arch = "wasm32"))]
 fn logger_hooks() -> Option<&'static LoggerHooks> {
     static HOOKS: OnceLock<Option<LoggerHooks>> = OnceLock::new();
     HOOKS.get_or_init(resolve_logger_hooks).as_ref()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_logger_hooks() -> Option<LoggerHooks> {
     // RTLD_DEFAULT-style lookup: libLiteRt is already loaded because the
     // process is linking against it. We just dlsym its exported symbols
@@ -136,6 +151,7 @@ fn resolve_logger_hooks() -> Option<LoggerHooks> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn lib_get<'a, T>(lib: &'a libloading::Library, name: &[u8]) -> Option<Symbol<'a, T>> {
     lib.get(name).ok()
 }

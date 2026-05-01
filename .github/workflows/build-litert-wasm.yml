@@ -1,0 +1,102 @@
+name: Build libLiteRt (WASM)
+
+# Cross-compiles LiteRT v2.1.4 to wasm32-unknown-emscripten via emcmake +
+# CMake. Produces a tarball of static archives (~13 MB) suitable for linking
+# into a Rust WASM crate.
+#
+# Outputs `libLiteRt-wasm32-emscripten.tar.gz` containing:
+#   - libLiteRt.a (aggregator, mostly empty)
+#   - liblitert_runtime.a, liblitert_core.a, liblitert_c_api.a, ...
+#   - libtensorflow-lite.a, libXNNPACK.a, libxnnpack-microkernels-prod.a
+#   - libflatbuffers.a, libabsl_*.a, libgemmlowp_eight_bit_int_gemm.a
+#
+# Uploaded as an artifact for `litert-sys` build.rs to download SHA-pinned.
+on:
+  workflow_dispatch:
+    inputs:
+      litert_tag:
+        description: "LiteRT upstream tag to build from"
+        default: "v2.1.4"
+        type: string
+  push:
+    tags: ["wasm-build-*"]
+
+env:
+  LITERT_TAG: ${{ inputs.litert_tag || 'v2.1.4' }}
+  EMSDK_VERSION: "5.0.7"
+
+jobs:
+  build:
+    name: wasm32-unknown-emscripten
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install emsdk ${{ env.EMSDK_VERSION }}
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: verify emcc
+        run: emcc --version | head -2
+
+      - name: clone LiteRT ${{ env.LITERT_TAG }}
+        run: |
+          git clone --depth=1 --branch="${LITERT_TAG}" \
+            https://github.com/google-ai-edge/LiteRT.git /tmp/litert
+
+      - name: apply WASM patches
+        run: |
+          cd /tmp/litert
+          for patch in "${GITHUB_WORKSPACE}"/wasm-patches/litert-v2.1.4/*.patch; do
+            echo "applying $(basename "${patch}")"
+            git apply "${patch}"
+          done
+          git status
+
+      - name: configure
+        working-directory: /tmp/litert/litert
+        run: |
+          emcmake cmake -S . -B build-wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLITERT_ENABLE_GPU=OFF \
+            -DLITERT_ENABLE_NPU=OFF \
+            -DLITERT_DISABLE_KLEIDIAI=ON \
+            -DLITERT_BUILD_TESTS=OFF \
+            -DTFLITE_ENABLE_GPU=OFF \
+            -DTFLITE_ENABLE_RUY=ON
+
+      - name: build
+        working-directory: /tmp/litert/litert
+        run: |
+          emmake cmake --build build-wasm \
+            --target litert_runtime_c_api_shared_lib \
+            -j $(nproc)
+
+      - name: collect static archives into tarball
+        working-directory: /tmp/litert/litert/build-wasm
+        run: |
+          mkdir -p /tmp/wasm-out
+          # Pull every lib*.a (excluding test fixture inputs).
+          # litert-sys/build.rs globs the cache dir and emits
+          # `-l static=<name>` for each, so being inclusive is correct —
+          # wasm-ld dead-strips unused syms.
+          find . \
+            \( -name "lib*.a" ! -path "*/testdata/*" ! -name "input.a" \) \
+            -exec cp {} /tmp/wasm-out/ \;
+          ls /tmp/wasm-out/ | wc -l
+          du -sh /tmp/wasm-out/
+          cd /tmp/wasm-out
+          tar czf /tmp/libLiteRt-wasm32-emscripten.tar.gz *.a
+          ls -la /tmp/libLiteRt-wasm32-emscripten.tar.gz
+          sha256sum /tmp/libLiteRt-wasm32-emscripten.tar.gz | tee /tmp/libLiteRt-wasm32-emscripten.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libLiteRt-wasm32-emscripten
+          path: |
+            /tmp/libLiteRt-wasm32-emscripten.tar.gz
+            /tmp/libLiteRt-wasm32-emscripten.tar.gz.sha256
+          if-no-files-found: error

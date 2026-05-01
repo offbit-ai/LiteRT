@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version       = "0.2.1"
+version       = "0.3.0"
 edition       = "2021"
 rust-version  = "1.75"
 license       = "Apache-2.0"
@@ -22,10 +22,10 @@ keywords      = ["litert", "tflite", "tensorflow", "ml", "inference"]
 categories    = ["api-bindings", "science"]
 
 [workspace.dependencies]
-litert-sys    = { version = "0.2.1", path = "litert-sys" }
-litert        = { version = "0.2.1", path = "litert" }
-litert-lm-sys = { version = "0.2.1", path = "litert-lm-sys" }
-litertlm      = { version = "0.2.1", path = "litert-lm" }
+litert-sys    = { version = "0.3.0", path = "litert-sys" }
+litert        = { version = "0.3.0", path = "litert" }
+litert-lm-sys = { version = "0.3.0", path = "litert-lm-sys" }
+litertlm      = { version = "0.3.0", path = "litert-lm" }
 
 thiserror   = "1"
 libloading  = "0.8"

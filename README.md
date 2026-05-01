@@ -21,7 +21,7 @@ inference and LLM text generation. Add a crate to `Cargo.toml` and
 
 ```toml
 [dependencies]
-litert = "0.2"
+litert = "0.3"
 ```
 
 ```rust
@@ -38,7 +38,7 @@ let compiled = CompiledModel::new(env, model, &CompilationOptions::new()?)?;
 
 ```toml
 [dependencies]
-litertlm = "0.2"
+litertlm = "0.3"
 ```
 
 ```rust
@@ -78,10 +78,10 @@ each by SHA-256, and downloads them into a user-level cache the first time
 
 | Crate | What it is | crates.io |
 |-------|------------|-----------|
-| [`litert`](https://crates.io/crates/litert) | Safe ML inference wrappers (CompiledModel, TensorBuffer, GPU) | 0.2.x |
-| [`litertlm`](https://crates.io/crates/litertlm) | Safe LLM text generation (Engine, Session, Conversation streaming) | 0.2.x |
-| [`litert-sys`](https://crates.io/crates/litert-sys) | Raw FFI — LiteRT 2.x C API | 0.2.x |
-| [`litert-lm-sys`](https://crates.io/crates/litert-lm-sys) | Raw FFI — LiteRT-LM C engine API | 0.2.x |
+| [`litert`](https://crates.io/crates/litert) | Safe ML inference wrappers (CompiledModel, TensorBuffer, GPU) | 0.3.x |
+| [`litertlm`](https://crates.io/crates/litertlm) | Safe LLM text generation (Engine, Session, Conversation streaming) | 0.3.x |
+| [`litert-sys`](https://crates.io/crates/litert-sys) | Raw FFI — LiteRT 2.x C API | 0.3.x |
+| [`litert-lm-sys`](https://crates.io/crates/litert-lm-sys) | Raw FFI — LiteRT-LM C engine API | 0.3.x |
 
 ## Platform support
 
@@ -93,7 +93,12 @@ each by SHA-256, and downloads them into a user-level cache the first time
 | `x86_64-pc-windows-msvc`        | ✅  | WebGPU                            | litert-lm prebuilt (Git LFS)   |
 | `aarch64-linux-android`         | ✅  | OpenCL/GL (via `ClGlAccelerator`) | LiteRT Maven AAR               |
 | `x86_64-linux-android`          | ✅  | OpenCL/GL                         | LiteRT Maven AAR               |
-| `aarch64-apple-ios`             | ⏳  | —                                 | deferred to 0.2.x (no upstream prebuilt) |
+| `wasm32-unknown-emscripten`     | ✅  | — (XNNPACK only; GPU deferred)    | LiteRT-rs CMake+emcc build     |
+| `aarch64-apple-ios`             | ⏳  | —                                 | deferred (no upstream prebuilt) |
+
+`litertlm` / `litert-lm-sys` (LLM inference) are desktop/Android only this
+release. WASM support for the LLM stack is on the 0.4.0 roadmap — see
+`wasm-patches/litert-lm-v0.10.2/`.
 
 ## Environment variables (escape hatches)
 
@@ -134,6 +139,109 @@ Alternatively, prefix individual invocations with
 `RUSTFLAGS="-C link-arg=-Wl,-rpath,/path/to/cache"`.
 
 Linux, Windows, and Android are unaffected.
+
+## WebAssembly (browser + Node.js + wasmtime)
+
+`litert` and `litert-sys` cross-compile to `wasm32-unknown-emscripten` for
+in-browser ML inference, server-side WASM (Cloudflare Workers, wasmtime),
+or Node.js. The runtime is TFLite + XNNPACK CPU kernels, statically
+linked into the produced `.wasm`.
+
+### Prerequisites
+
+* [emsdk](https://github.com/emscripten-core/emsdk) ≥ 5.0.7. Install via
+  `git clone https://github.com/emscripten-core/emsdk && cd emsdk && ./emsdk
+  install latest && ./emsdk activate latest`.
+* `rustup target add wasm32-unknown-emscripten`.
+* `source $EMSDK/emsdk_env.sh` before each build session.
+
+### Build
+
+```bash
+source $EMSDK/emsdk_env.sh
+
+# NODERAWFS=1 lets the WASM module read host files (model.tflite) under
+# Node/wasmtime. ALLOW_MEMORY_GROWTH=1 lets the heap grow past 16 MB so
+# larger models load. Drop both for a browser bundle (use --preload-file
+# or fetch+MEMFS instead).
+RUSTFLAGS="-C link-arg=-sNODERAWFS=1 -C link-arg=-sALLOW_MEMORY_GROWTH=1" \
+  cargo build -p litert --example add_wasm \
+              --target wasm32-unknown-emscripten --release
+```
+
+Output (`target/wasm32-unknown-emscripten/release/examples/`):
+- `add_wasm.wasm` — ~5–12 MB WebAssembly module (12 MB debug, smaller in
+  release with `-Oz`).
+- `add_wasm.js` — emscripten JS shim that knows how to instantiate the
+  `.wasm`.
+
+### Run (Node.js)
+
+```bash
+node target/wasm32-unknown-emscripten/release/examples/add_wasm.js
+# add_10x10.tflite — WASM CPU inference
+# first 5 outputs: [100.0, 102.0, 104.0, 106.0, 108.0]
+# last 5 outputs:  [290.0, 292.0, 294.0, 296.0, 298.0]
+```
+
+### Browser
+
+Drop `NODERAWFS=1` (no host filesystem in browsers). Embed the model with
+emcc's `--preload-file model.tflite` (bundles into a `.data` sidecar), or
+`fetch()` it from JS and write to MEMFS before calling `Model::from_file`,
+or use `Model::from_bytes` with a `Vec<u8>` you `fetch()`'d. Then drop the
+`.wasm` + `.js` into a static page:
+
+```html
+<script src="add_wasm.js"></script>
+```
+
+### Building from source (no published artifact yet)
+
+While the v0.3.0 prebuilt tarball is being staged, build the static
+archives locally and point `litert-sys` at them via `LITERT_LIB_DIR`:
+
+```bash
+# 1. Clone + patch upstream LiteRT
+git clone --depth=1 --branch=v2.1.4 \
+    https://github.com/google-ai-edge/LiteRT.git /tmp/litert
+cd /tmp/litert
+git apply $LITERT_RS_DIR/wasm-patches/litert-v2.1.4/01-cmake-emscripten-support.patch
+
+# 2. Cross-compile via CMake + emcc
+emcmake cmake -S litert -B litert/build-wasm \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLITERT_ENABLE_GPU=OFF -DLITERT_ENABLE_NPU=OFF \
+    -DLITERT_DISABLE_KLEIDIAI=ON -DLITERT_BUILD_TESTS=OFF \
+    -DTFLITE_ENABLE_GPU=OFF
+emmake cmake --build litert/build-wasm \
+    --target litert_runtime_c_api_shared_lib -j
+
+# 3. Flatten archives into a single dir for litert-sys
+mkdir -p /tmp/litert-wasm-libs
+find litert/build-wasm \( -name "lib*.a" ! -path "*/testdata/*" ! -name "input.a" \) \
+    -exec cp {} /tmp/litert-wasm-libs/ \;
+
+# 4. Build
+cd $LITERT_RS_DIR
+LITERT_LIB_DIR=/tmp/litert-wasm-libs \
+RUSTFLAGS="-C link-arg=-sNODERAWFS=1 -C link-arg=-sALLOW_MEMORY_GROWTH=1" \
+  cargo build -p litert --example add_wasm --target wasm32-unknown-emscripten
+```
+
+Once the [`build-litert-wasm.yml`](.github/workflows/build-litert-wasm.yml)
+GitHub Actions workflow has uploaded a SHA-pinned tarball, `cargo build`
+will download and verify it automatically — no `LITERT_LIB_DIR`, no emsdk
+setup needed for end users on the WASM target.
+
+### Limitations (v0.3.0)
+
+- **CPU only.** WebGPU acceleration is on the 0.4.0 roadmap.
+- **No `set_global_log_severity`.** The WASM build doesn't export the
+  logger-control symbols. Returns `Error::Unsupported`; LiteRT logs at
+  default verbosity.
+- **No LLM stack.** `litertlm` / `litert-lm-sys` need separate fork patches
+  to LiteRT-LM (orchestrator + transitive C++ deps); 0.4.0 milestone.
 
 ## Cross-platform development
 
