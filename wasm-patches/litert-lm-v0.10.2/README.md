@@ -95,36 +95,47 @@ Beyond that, expected (untested):
   single-threaded WASM v1, or wrap behind `#ifdef __EMSCRIPTEN__`
   fallbacks.
 
-## Verified (status: ~70-75% through host prebuild, 0.4.0 spike)
+## Verified (status: ~93% through host prebuild, 0.4.0 spike)
 
-After 7 distinct fixes consolidated into `01-cmake-emscripten-support.patch`
-+ 1 helper script, the host prebuild progresses through:
+After 9 distinct fixes consolidated into `01-cmake-emscripten-support.patch`
++ 2 helper scripts (libpng pngpriv.h fix, litert_cc_options restore),
+the host prebuild progresses through:
 
 ```
 ✅ kissfft, opencl_headers, zlib, libpng16, antlr4-runtime
 ✅ absl_external, flatbuffers_external, gtest_external, re2_external
-✅ protobuf_external (protoc, protoc-gen-upb*)
-✅ sentencepiece_external (spm_train, spm_encode, spm_decode, spm_normalize, spm_export_vocab)
-✅ tokenizers-cpp_external (Rust onig_sys + cxx bridge)
-✅ tflite_external
-❌ litert_external — fails at link of libLiteRt.dylib /
-   apply_plugin_main / run_model / dispatch_api_GoogleTensor_so with
-   `ld: library 'litert_cc_options' not found`
+✅ protobuf_external (protoc, protoc-gen-upb*) — needs CF + UPB toolchain unset
+✅ sentencepiece_external (all spm_* CLI tools) — needs CF
+✅ tokenizers-cpp_external (Rust onig_sys + cxx bridge) — needs CC_<triple>
+✅ tflite_external — needs CF + XNNPACK_ENABLE_KLEIDIAI=OFF
+✅ litert_external compile — needs CF + cc/options/CMakeLists.txt restore
+❌ litert_external link of libLiteRt.dylib — DUPLICATE SYMBOL ERRORS
 ```
 
-The `litert_cc_options` failure is a DIFFERENT class of issue from the
-prior CF/env walls — it suggests the litert subproject's link graph
-references a target that isn't being built by the time the dependent
-targets try to link it. Could be:
-- A missing `add_library(litert_cc_options ...)` call in the LiteRT
-  commit LiteRT-LM v0.10.2 pins (`fb16353a648` from 2026-03-24).
-- A subdir order issue in `litert/CMakeLists.txt` where `cc/` builds
-  after `c/` instead of before.
-- A patcher.cmake step (`cmake/packages/litert/litert_patcher.cmake`)
-  that strips or modifies the target.
+The duplicate-symbol failure is the 10th distinct wall. Stopping the
+auto-spike here pending dedicated investigation. Symptoms:
 
-Investigation deferred — needs a fresh look at the actual LiteRT source
-tree and the order of `add_subdirectory()` calls.
+```
+duplicate symbol 'google::protobuf::internal::TcParser::FastV32R1' in:
+    libprotobuf-lite.a[generated_message_tctable_lite.cc.o]
+    libprotobuf.a[generated_message_tctable_lite.cc.o]
+duplicate symbol 'tflite::profiling::Node::Node(...)' in:
+    libmodel_runtime_info_proto.a[model_runtime_info.pb.cc.o]
+    libtflite_profiling.a[model_runtime_info.pb.cc.o]
+```
+
+Both libprotobuf-lite + libprotobuf are getting linked into libLiteRt.dylib
+even though libprotobuf-lite is supposed to be a subset of libprotobuf
+(should pick one). Same for tflite_profiling vs the locally-generated
+model_runtime_info_proto. Likely a `target_link_libraries()` chain in
+the litert subproject's CMakeLists redundantly references both.
+
+Working around with `-Wl,-multiply_defined,suppress` is no longer
+viable on modern macOS (it's marked obsolete by ld). The fix needs
+careful pruning of the link graph in `litert/c/CMakeLists.txt` /
+`litert/cc/CMakeLists.txt` / `litert/runtime/CMakeLists.txt`.
+
+Investigation deferred to a dedicated multi-day session.
 
 Tested with emsdk 5.0.7, macOS arm64, May 2026.
 
