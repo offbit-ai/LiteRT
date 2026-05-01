@@ -131,11 +131,40 @@ model_runtime_info_proto. Likely a `target_link_libraries()` chain in
 the litert subproject's CMakeLists redundantly references both.
 
 Working around with `-Wl,-multiply_defined,suppress` is no longer
-viable on modern macOS (it's marked obsolete by ld). The fix needs
-careful pruning of the link graph in `litert/c/CMakeLists.txt` /
-`litert/cc/CMakeLists.txt` / `litert/runtime/CMakeLists.txt`.
+viable on modern macOS (the link command already includes it; ld
+emits "warning: -multiply_defined is obsolete" and ignores it).
 
-Investigation deferred to a dedicated multi-day session.
+Investigation traced via `link.txt` in
+`build-wasm/prebuild/build/external/litert/src/litert_external-build/c/CMakeFiles/litert_runtime_c_api_shared_lib.dir/link.txt`:
+
+- Both `libprotobuf-lite.a` and `libprotobuf.a` are passed (libprotobuf
+  is a superset of lite — same `generated_message_tctable_lite.cc.o`
+  appears in both).
+- Both `libmodel_runtime_info_proto.a` (built fresh in litert's tflite
+  subbuild from the .proto) AND `libtflite_profiling.a` (already has
+  the same .pb.cc.o from tflite's install) are passed.
+
+Two viable fix directions for the next session to try:
+
+1. **Source-side**: prune `target_link_libraries()` chains in
+   `litert/c/CMakeLists.txt` / `litert/cc/CMakeLists.txt` /
+   `litert/runtime/CMakeLists.txt` so libprotobuf-lite isn't added
+   when libprotobuf is. Likely requires understanding how
+   `Protobuf::libprotobuf-lite` enters via abseil's CMake config.
+2. **Hacky post-build**: strip the conflicting .o files from
+   libprotobuf-lite.a (`ar -d <archive> generated_message_tctable_lite.cc.o
+   zero_copy_stream_impl_lite.cc.o ...`) and from
+   libmodel_runtime_info_proto.a / libprofiling_info_proto.a as a
+   PATCH_COMMAND step in `cmake/packages/protobuf/protobuf.cmake` /
+   `cmake/packages/tflite/tflite.cmake`. Surgical but works around
+   the integration bug without touching the upstream link graph.
+
+This is the natural pause point for the auto-mode 0.4.0 spike. The
+9 patches + 6 commits we've authored are durable; replaying them on
+a fresh checkout reproduces this exact ~93% state. Resume from this
+checkpoint in a dedicated multi-day session — ideally on Linux, which
+sidesteps the CoreFoundation walls entirely (Linux's libabsl_time_zone
+uses `tzfile` directly, not CoreFoundation).
 
 Tested with emsdk 5.0.7, macOS arm64, May 2026.
 
