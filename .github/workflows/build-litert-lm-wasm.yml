@@ -76,12 +76,10 @@ jobs:
           mkdir -p cmake/scripts
           cp "${GITHUB_WORKSPACE}"/wasm-patches/litert-lm-v0.10.2/cmake/scripts/*.cmake \
              cmake/scripts/
-          # Source-level patch: stub two LiteRT API calls in
-          # runtime/executor/llm_executor_settings_utils.cc that the LiteRT
-          # commit v0.10.2 pins doesn't have (SetKernelBatchSize +
-          # SetDisableDelegateClustering, added to LiteRT after fb16353a648).
-          cmake -DSETTINGS_FILE=runtime/executor/llm_executor_settings_utils.cc \
-                -P cmake/scripts/patch_llm_executor_settings.cmake
+          # Source-level patches: stub LiteRT C++ API calls that v0.10.2
+          # source uses but the LiteRT commit it pins (fb16353a648) doesn't
+          # define. Generic skew-stubber walks a list of (file, regex) pairs.
+          cmake -DLITERTLM_ROOT=. -P cmake/scripts/patch_litert_api_skew.cmake
           ls cmake/scripts/
           git status
 
