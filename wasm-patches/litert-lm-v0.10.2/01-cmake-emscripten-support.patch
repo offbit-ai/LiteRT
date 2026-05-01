@@ -200,7 +200,7 @@ index 426fec0..61a6c96 100644
        -Dabsl_DIR=${ABSL_INSTALL_PREFIX}/lib/cmake/absl
        -DABSL_INCLUDE_DIRS=${ABSL_INCLUDE_DIR}
 diff --git a/cmake/packages/tflite/tflite.cmake b/cmake/packages/tflite/tflite.cmake
-index 789c9cb..0d37022 100644
+index 789c9cb..03789b6 100644
 --- a/cmake/packages/tflite/tflite.cmake
 +++ b/cmake/packages/tflite/tflite.cmake
 @@ -81,8 +81,12 @@ if(NOT EXISTS "${TFLITE_STATIC_LIB}")
@@ -217,3 +217,15 @@ index 789c9cb..0d37022 100644
              -Dabsl_DIR=${ABSL_INSTALL_PREFIX}/lib/cmake/absl
              -D_abseil-cpp_LICENSE_FILE:FILEPATH=${ABSL_SRC_DIR}/absl_external/LICENSE
              -DABSL_INCLUDE_DIR=${ABSL_INCLUDE_DIR}
+@@ -122,6 +126,11 @@ if(NOT EXISTS "${TFLITE_STATIC_LIB}")
+             -DTFLITE_ENABLE_RESOURCE_VARIABLE=OFF
+             -DXNNPACK_SET_VERBOSITY=OFF
+             -DTFLITE_ENABLE_GPU=OFF
++            # XNNPACK's KleidiAI integration (Apple SME matrix kernels)
++            # references kai_* symbols from the KleidiAI library. We don't
++            # build KleidiAI here, so disable to avoid linker errors when
++            # libLiteRt.dylib links libxnnpack-microkernels-prod.a.
++            -DXNNPACK_ENABLE_KLEIDIAI=OFF
+ 
+             -DTFLITE_SRC_DIR=${TFLITE_SRC_DIR}
+             -DTFLITE_BUILD_DIR=${TFLITE_BUILD_DIR}
