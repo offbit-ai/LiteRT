@@ -1,0 +1,140 @@
+name: Build libLiteRtLmC (WASM)
+
+# Cross-compiles LiteRT-LM v0.10.2 to wasm32-unknown-emscripten via the
+# upstream CMake build (cmake/packages/litert_lm) plus our patches under
+# wasm-patches/litert-lm-v0.10.2/.
+#
+# Runs on ubuntu-latest specifically because the macOS spike hit several
+# Apple-only walls (CoreFoundation framework linking on absl_time_zone,
+# libpng's TARGET_OS_MAC + <fp.h>, ld64's strict duplicate-symbol
+# detection). On Linux those don't apply, and the patches we authored
+# guard them behind generator expressions so they're no-ops here.
+#
+# Output: libLiteRtLmC-wasm32-emscripten.tar.gz uploaded to release
+# `litert-lm-wasm-v0.10.2`. litert-lm-sys/build.rs's WASM target arm
+# downloads + SHA-pins it.
+on:
+  workflow_dispatch:
+    inputs:
+      litert_lm_tag:
+        description: "LiteRT-LM upstream tag to build from"
+        default: "v0.10.2"
+        type: string
+  push:
+    tags: ["lm-wasm-build-*"]
+
+env:
+  LITERT_LM_TAG: ${{ inputs.litert_lm_tag || 'v0.10.2' }}
+  EMSDK_VERSION: "5.0.7"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: wasm32-unknown-emscripten
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # host prebuild alone is ~30-60 min, cross-compile another 30-60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            python3 python3-pip \
+            git curl wget unzip
+
+      - name: install emsdk ${{ env.EMSDK_VERSION }}
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: verify emcc
+        run: emcc --version | head -2
+
+      - name: install Rust + wasm32-unknown-emscripten target
+        run: |
+          rustup target add wasm32-unknown-emscripten
+          rustc --version
+
+      - name: clone LiteRT-LM ${{ env.LITERT_LM_TAG }}
+        run: |
+          git clone --depth=1 --branch="${LITERT_LM_TAG}" \
+            https://github.com/google-ai-edge/LiteRT-LM.git /tmp/litert-lm
+
+      - name: apply WASM patches
+        run: |
+          cd /tmp/litert-lm
+          for patch in "${GITHUB_WORKSPACE}"/wasm-patches/litert-lm-v0.10.2/*.patch; do
+            echo "applying $(basename "${patch}")"
+            git apply "${patch}"
+          done
+          # Helper scripts referenced from the patched CMake.
+          mkdir -p cmake/scripts
+          cp "${GITHUB_WORKSPACE}"/wasm-patches/litert-lm-v0.10.2/cmake/scripts/*.cmake \
+             cmake/scripts/
+          ls cmake/scripts/
+          git status
+
+      - name: configure (emcmake)
+        working-directory: /tmp/litert-lm
+        run: |
+          emcmake cmake -B build-wasm -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLITERTLM_TOOLCHAIN_ARGS="-DCMAKE_BUILD_TYPE=Release"
+
+      - name: build
+        working-directory: /tmp/litert-lm
+        run: |
+          # Tee output so subsequent steps can grep for known failure modes.
+          emmake cmake --build build-wasm -j $(nproc) 2>&1 | tee /tmp/build.log
+
+      - name: collect static archives into tarball
+        working-directory: /tmp/litert-lm/build-wasm
+        run: |
+          mkdir -p /tmp/wasm-out
+          # Pull every lib*.a from the cross stage (litert_lm/build/), not
+          # the prebuild stage (which contains host-arch artifacts).
+          find litert_lm/build \
+            \( -name "lib*.a" ! -path "*/testdata/*" ! -name "input.a" \) \
+            -exec cp {} /tmp/wasm-out/ \;
+          ls /tmp/wasm-out/ | wc -l
+          du -sh /tmp/wasm-out/
+          cd /tmp/wasm-out
+          tar czf /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz *.a
+          ls -la /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz
+          sha256sum /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz | tee /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libLiteRtLmC-wasm32-emscripten
+          path: |
+            /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz
+            /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz.sha256
+          if-no-files-found: error
+
+      - name: publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="litert-lm-wasm-${LITERT_LM_TAG}"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --title "WASM prebuilt for LiteRT-LM ${LITERT_LM_TAG}" \
+              --notes "CMake+emscripten build of LiteRT-LM ${LITERT_LM_TAG} static archives, produced by build-litert-lm-wasm.yml (workflow run ${GITHUB_RUN_ID}). Patches under wasm-patches/litert-lm-v0.10.2/."
+          fi
+          gh release upload "${tag}" \
+            /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz \
+            /tmp/libLiteRtLmC-wasm32-emscripten.tar.gz.sha256 \
+            --clobber
+
+      - name: upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          if-no-files-found: warn
