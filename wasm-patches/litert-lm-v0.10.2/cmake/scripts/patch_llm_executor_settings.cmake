@@ -18,13 +18,13 @@ file(READ "${SETTINGS_FILE}" content)
 # Replace the SetKernelBatchSize call (multi-line, ends in `);`).
 string(REGEX REPLACE
     "gpu_compilation_options\\.SetKernelBatchSize\\([^;]*\\);"
-    "/* PATCHED OUT for LiteRT API skew */ (void)0\;"
+    "/* PATCHED OUT for LiteRT API skew */ (void)0;"
     content "${content}")
 
 # Replace the SetDisableDelegateClustering call.
 string(REGEX REPLACE
     "runtime_options\\.SetDisableDelegateClustering\\([^;]*\\);"
-    "/* PATCHED OUT for LiteRT API skew */ (void)0\;"
+    "/* PATCHED OUT for LiteRT API skew */ (void)0;"
     content "${content}")
 
 file(WRITE "${SETTINGS_FILE}" "${content}")
