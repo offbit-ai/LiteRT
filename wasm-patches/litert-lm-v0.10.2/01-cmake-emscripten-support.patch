@@ -132,10 +132,19 @@ index a3f24e8..3b26d3b 100644
  block()
    set(PNG_SHARED OFF)
 diff --git a/cmake/packages/litert/litert.cmake b/cmake/packages/litert/litert.cmake
-index f314c92..3267b4d 100644
+index f314c92..29c47a1 100644
 --- a/cmake/packages/litert/litert.cmake
 +++ b/cmake/packages/litert/litert.cmake
-@@ -81,6 +81,9 @@ ExternalProject_Add(
+@@ -77,10 +77,18 @@ ExternalProject_Add(
+     -DLITERT_BUILD_CONFIG_DISABLE_GPU_VAL=${LITERT_BUILD_CONFIG_DISABLE_GPU_VAL}
+     -DLITERT_BUILD_CONFIG_DISABLE_NPU_VAL=${LITERT_BUILD_CONFIG_DISABLE_NPU_VAL}
+     -P "${LITERT_PACKAGE_DIR}/litert_patcher.cmake"
++    # Restore the truncated cc/options/CMakeLists.txt that defines
++    # litert_cc_options (referenced by libLiteRt.dylib + several tools).
++    COMMAND ${CMAKE_COMMAND}
++    -DCC_OPTIONS_CMAKELISTS=${LITERT_SRC_DIR}/cc/options/CMakeLists.txt
++    -P "${LITERTLM_PACKAGES_DIR}/../scripts/patch_litert_cc_options.cmake"
+ 
    CMAKE_ARGS
      ${LITERTLM_TOOLCHAIN_FILE}
      ${LITERTLM_TOOLCHAIN_ARGS}
@@ -145,7 +154,7 @@ index f314c92..3267b4d 100644
      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
      -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
-@@ -141,7 +144,11 @@ ExternalProject_Add(
+@@ -141,7 +149,11 @@ ExternalProject_Add(
      -DLITERT_DISABLE_KLEIDIAI=ON
      -DLITERT_BUILD_C_API=ON
      -DLITERT_BUILD_TOOLS=OFF
