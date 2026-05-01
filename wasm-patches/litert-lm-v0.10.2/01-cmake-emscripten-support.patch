@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 63ff28e..0f4bf87 100644
+index 63ff28e..d24a637 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -27,6 +27,22 @@ if(NOT DEFINED LITERTLM_HOST_FLATC)
@@ -40,7 +40,7 @@ index 63ff28e..0f4bf87 100644
      ExternalProject_Add(
          litert_lm_prebuild
  
-@@ -48,8 +72,40 @@ if(LITERTLM_TOOLCHAIN_ARGS)
+@@ -48,8 +72,61 @@ if(LITERTLM_TOOLCHAIN_ARGS)
          DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/download"
          INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/install"
  
@@ -61,12 +61,25 @@ index 63ff28e..0f4bf87 100644
 +        # automatically, so we inject it via LDFLAGS env var, which CMake
 +        # picks up at configure time and propagates to all child Makefiles.
 +        # Linux/other hosts: the var is empty and the export is a no-op.
++        #
++        # CARGO_TARGET_<triple>_LINKER and CC_<triple>/CXX_<triple> override
++        # the inherited CC=emcc/CXX=em++ for tokenizers-cpp's Rust crates
++        # (onig_sys uses cc-rs which would otherwise pick up emcc's clang
++        # for native host compilation, failing with "stdlib.h not found").
 +        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
 +            --unset=CC --unset=CXX
 +            --unset=CMAKE_TOOLCHAIN_FILE
 +            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
 +            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
 +            "LDFLAGS=$<$<PLATFORM_ID:Darwin>:-framework CoreFoundation>"
++            "CC_aarch64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_aarch64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_x86_64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_x86_64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_x86_64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_x86_64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_aarch64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_aarch64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
 +            ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
 +                "-DCMAKE_C_COMPILER=${LITERTLM_HOST_C_COMPILER}"
 +                "-DCMAKE_CXX_COMPILER=${LITERTLM_HOST_CXX_COMPILER}"
@@ -79,6 +92,14 @@ index 63ff28e..0f4bf87 100644
 +            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
 +            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
 +            "LDFLAGS=$<$<PLATFORM_ID:Darwin>:-framework CoreFoundation>"
++            "CC_aarch64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_aarch64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_x86_64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_x86_64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_x86_64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_x86_64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
++            "CC_aarch64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++            "CXX_aarch64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
 +            ${CMAKE_COMMAND} --build <BINARY_DIR>
  
          INSTALL_COMMAND ""
