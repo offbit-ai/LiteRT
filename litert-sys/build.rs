@@ -172,14 +172,12 @@ const WINDOWS_X86_64: &[Prebuilt] = &[
 // `lib<name>.a` we find — the upstream build's archive surface evolves over
 // time, and a static allowlist would rot. wasm-ld dead-strips unused syms.
 //
-// TODO(0.3.0-rc): replace placeholder oid/size after the GitHub Actions
-// workflow has uploaded the artifact and we've recorded the SHA-256.
 const WASM32_EMSCRIPTEN_TARBALL_URL: &str =
     "https://github.com/offbit-ai/LiteRT/releases/download/wasm-prebuilt-v2.1.4/\
      libLiteRt-wasm32-emscripten.tar.gz";
 const WASM32_EMSCRIPTEN_OID: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
-const WASM32_EMSCRIPTEN_SIZE: u64 = 0;
+    "83b51adac6d1f4577165a0b8e678940cfb3d4b3fb721ed42f8776d0cd0b77209";
+const WASM32_EMSCRIPTEN_SIZE: u64 = 3_513_472;
 
 fn target_spec(target: &str) -> Option<TargetSpec> {
     let dist = match target {

@@ -25,6 +25,9 @@ env:
   LITERT_TAG: ${{ inputs.litert_tag || 'v2.1.4' }}
   EMSDK_VERSION: "5.0.7"
 
+permissions:
+  contents: write  # needed to create the release + upload artifacts
+
 jobs:
   build:
     name: wasm32-unknown-emscripten
