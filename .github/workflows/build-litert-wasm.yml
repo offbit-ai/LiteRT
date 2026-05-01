@@ -100,3 +100,21 @@ jobs:
             /tmp/libLiteRt-wasm32-emscripten.tar.gz
             /tmp/libLiteRt-wasm32-emscripten.tar.gz.sha256
           if-no-files-found: error
+
+      - name: publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tarball lives at a stable release URL so litert-sys/build.rs can
+          # SHA-pin it. Tag pattern: wasm-prebuilt-v<litert_tag>. Idempotent —
+          # if the release exists already, upload --clobber overwrites.
+          tag="wasm-prebuilt-${LITERT_TAG}"
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --title "WASM prebuilt for LiteRT ${LITERT_TAG}" \
+              --notes "CMake+emscripten build of LiteRT ${LITERT_TAG} static archives, produced by build-litert-wasm.yml (workflow run ${GITHUB_RUN_ID}). Patches under wasm-patches/litert-v2.1.4/."
+          fi
+          gh release upload "${tag}" \
+            /tmp/libLiteRt-wasm32-emscripten.tar.gz \
+            /tmp/libLiteRt-wasm32-emscripten.tar.gz.sha256 \
+            --clobber
