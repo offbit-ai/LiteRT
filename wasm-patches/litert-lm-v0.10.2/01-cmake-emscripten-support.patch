@@ -132,19 +132,32 @@ index a3f24e8..3b26d3b 100644
  block()
    set(PNG_SHARED OFF)
 diff --git a/cmake/packages/litert/litert.cmake b/cmake/packages/litert/litert.cmake
-index f314c92..caab56a 100644
+index f314c92..3267b4d 100644
 --- a/cmake/packages/litert/litert.cmake
 +++ b/cmake/packages/litert/litert.cmake
 @@ -81,6 +81,9 @@ ExternalProject_Add(
    CMAKE_ARGS
      ${LITERTLM_TOOLCHAIN_FILE}
      ${LITERTLM_TOOLCHAIN_ARGS}
-+    # Same CoreFoundation framework injection as protobuf/sentencepiece —
-+    # absl_time_zone.a references CF symbols on Apple host builds.
-+    "$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
++    # NOTE: CoreFoundation framework injection happens on the
++    # CMAKE_EXE_LINKER_FLAGS line below (combined with -L paths) — that
++    # line is the authoritative one for litert's link flags.
      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
      -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
+@@ -141,7 +144,11 @@ ExternalProject_Add(
+     -DLITERT_DISABLE_KLEIDIAI=ON
+     -DLITERT_BUILD_C_API=ON
+     -DLITERT_BUILD_TOOLS=OFF
+-    "-DCMAKE_EXE_LINKER_FLAGS=-L${ABSL_LIB_DIR} -L${PROTO_LIB_DIR} -L${FLATBUFFERS_LIB_DIR} -L${TFLITE_LIB_DIR}"
++    # Combined: -L paths for absl/proto/flatbuffers/tflite installs, plus
++    # `-framework CoreFoundation` on Apple (TFLite's analyze_model and
++    # other tools link absl_time_zone → CF symbols). Replacing the line
++    # above (line 86) since this one overrides CMAKE_EXE_LINKER_FLAGS.
++    "-DCMAKE_EXE_LINKER_FLAGS=-L${ABSL_LIB_DIR} -L${PROTO_LIB_DIR} -L${FLATBUFFERS_LIB_DIR} -L${TFLITE_LIB_DIR}$<$<PLATFORM_ID:Darwin>: -framework CoreFoundation>"
+ 
+     # TODO(totero): Organize these flags.
+     -DLITERTLM_MODULES_DIR=${LITERTLM_MODULES_DIR}
 diff --git a/cmake/packages/protobuf/protobuf.cmake b/cmake/packages/protobuf/protobuf.cmake
 index 5131f2b..00a5f3a 100644
 --- a/cmake/packages/protobuf/protobuf.cmake
