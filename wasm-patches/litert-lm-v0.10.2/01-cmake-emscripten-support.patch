@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 63ff28e..0bff556 100644
+index 63ff28e..0f4bf87 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -27,6 +27,22 @@ if(NOT DEFINED LITERTLM_HOST_FLATC)
@@ -40,7 +40,7 @@ index 63ff28e..0bff556 100644
      ExternalProject_Add(
          litert_lm_prebuild
  
-@@ -48,8 +72,31 @@ if(LITERTLM_TOOLCHAIN_ARGS)
+@@ -48,8 +72,40 @@ if(LITERTLM_TOOLCHAIN_ARGS)
          DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/download"
          INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/install"
  
@@ -54,11 +54,19 @@ index 63ff28e..0bff556 100644
 +        # invocations (for absl/gtest/re2/etc. ExternalProjects inside the
 +        # prebuild's own CMakeLists.txt) which would otherwise re-pick-up
 +        # emcc from their inherited env.
++        # protobuf v6.31.1's protoc-gen-upbdefs/protoc-gen-upb link against
++        # libabsl_time_zone.a which references CoreFoundation symbols
++        # (CFStringGetMaximumSizeForEncoding, CFTimeZoneCopyDefault, ...) on
++        # macOS. Their CMakeLists doesn't add `-framework CoreFoundation`
++        # automatically, so we inject it via LDFLAGS env var, which CMake
++        # picks up at configure time and propagates to all child Makefiles.
++        # Linux/other hosts: the var is empty and the export is a no-op.
 +        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
 +            --unset=CC --unset=CXX
 +            --unset=CMAKE_TOOLCHAIN_FILE
 +            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
 +            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
++            "LDFLAGS=$<$<PLATFORM_ID:Darwin>:-framework CoreFoundation>"
 +            ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
 +                "-DCMAKE_C_COMPILER=${LITERTLM_HOST_C_COMPILER}"
 +                "-DCMAKE_CXX_COMPILER=${LITERTLM_HOST_CXX_COMPILER}"
@@ -70,6 +78,7 @@ index 63ff28e..0bff556 100644
 +            --unset=CMAKE_TOOLCHAIN_FILE
 +            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
 +            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
++            "LDFLAGS=$<$<PLATFORM_ID:Darwin>:-framework CoreFoundation>"
 +            ${CMAKE_COMMAND} --build <BINARY_DIR>
  
          INSTALL_COMMAND ""
@@ -101,16 +110,67 @@ index a3f24e8..3b26d3b 100644
  )
  block()
    set(PNG_SHARED OFF)
-diff --git a/cmake/scripts/patch_libpng_pngpriv.cmake b/cmake/scripts/patch_libpng_pngpriv.cmake
-new file mode 100644
-index 0000000..168af21
---- /dev/null
-+++ b/cmake/scripts/patch_libpng_pngpriv.cmake
-@@ -0,0 +1,7 @@
-+# Patches libpng's pngpriv.h to drop TARGET_OS_MAC from the conditional that
-+# triggers <fp.h> inclusion. Cross-platform via CMake file(STRINGS) +
-+# file(WRITE) instead of relying on sed/perl flag differences.
-+file(READ "${PNGPRIV_H}" content)
-+string(REPLACE " || defined(TARGET_OS_MAC)" "" content "${content}")
-+file(WRITE "${PNGPRIV_H}" "${content}")
-+message(STATUS "[litertlm-patch] removed TARGET_OS_MAC from ${PNGPRIV_H}")
+diff --git a/cmake/packages/litert/litert.cmake b/cmake/packages/litert/litert.cmake
+index f314c92..caab56a 100644
+--- a/cmake/packages/litert/litert.cmake
++++ b/cmake/packages/litert/litert.cmake
+@@ -81,6 +81,9 @@ ExternalProject_Add(
+   CMAKE_ARGS
+     ${LITERTLM_TOOLCHAIN_FILE}
+     ${LITERTLM_TOOLCHAIN_ARGS}
++    # Same CoreFoundation framework injection as protobuf/sentencepiece —
++    # absl_time_zone.a references CF symbols on Apple host builds.
++    "$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
+     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+     -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
+diff --git a/cmake/packages/protobuf/protobuf.cmake b/cmake/packages/protobuf/protobuf.cmake
+index 5131f2b..00a5f3a 100644
+--- a/cmake/packages/protobuf/protobuf.cmake
++++ b/cmake/packages/protobuf/protobuf.cmake
+@@ -71,6 +71,12 @@ if(NOT EXISTS "${PROTO_CONFIG_CMAKE_FILE}")
+       -Dprotobuf_BUILD_LIBPROTOC=ON
+       -Dprotobuf_BUILD_PROTOBUF_BINARIES=ON
+       -Dprotobuf_LOCAL_DEPENDENCIES_ONLY=ON
++      # protoc-gen-upbdefs/protoc-gen-upb (UPB code generators for Rust/JS
++      # bindings) link libabsl_time_zone.a which references CoreFoundation
++      # symbols on Apple. protobuf's CMakeLists doesn't add the framework
++      # automatically, so inject it via EXE_LINKER_FLAGS. On non-Apple this
++      # generator expression evaluates to empty and is a no-op.
++      "$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
+       -Dabsl_DIR=${ABSL_INSTALL_PREFIX}/lib/cmake/absl
+       -DGTest_DIR=${GTEST_INSTALL_PREFIX}/lib/cmake/GTest
+       -DProtobuf_DIR=${PROTO_INSTALL_PREFIX}/lib/cmake/Protobuf
+diff --git a/cmake/packages/sentencepiece/sentencepiece.cmake b/cmake/packages/sentencepiece/sentencepiece.cmake
+index 426fec0..61a6c96 100644
+--- a/cmake/packages/sentencepiece/sentencepiece.cmake
++++ b/cmake/packages/sentencepiece/sentencepiece.cmake
+@@ -76,6 +76,10 @@ if(NOT EXISTS "${SENTENCE_LIBRARY_STATIC}")
+       -DSPM_PROTOBUF_PROVIDER=package
+       -DSPM_ENABLE_SHARED=OFF
+       -DSPM_ENABLE_TCMALLOC=OFF
++      # spm_train/spm_encode/spm_decode/spm_normalize/spm_export_vocab link
++      # libabsl_time_zone.a → CoreFoundation symbols on Apple. Inject the
++      # framework link via EXE_LINKER_FLAGS. No-op on non-Apple.
++      "$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
+ 
+       -Dabsl_DIR=${ABSL_INSTALL_PREFIX}/lib/cmake/absl
+       -DABSL_INCLUDE_DIRS=${ABSL_INCLUDE_DIR}
+diff --git a/cmake/packages/tflite/tflite.cmake b/cmake/packages/tflite/tflite.cmake
+index 789c9cb..0d37022 100644
+--- a/cmake/packages/tflite/tflite.cmake
++++ b/cmake/packages/tflite/tflite.cmake
+@@ -81,8 +81,12 @@ if(NOT EXISTS "${TFLITE_STATIC_LIB}")
+             -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
+             -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+             -DCMAKE_POSITION_INDEPENDENT_CODE=ON
++            # TFLite's CLI tools (benchmark_model, label_image, etc.) link
++            # absl_time_zone.a → CoreFoundation symbols on Apple. Inject
++            # the framework. No-op on non-Apple via generator expression.
++            "$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
++
+ 
+-            
+             -Dabsl_DIR=${ABSL_INSTALL_PREFIX}/lib/cmake/absl
+             -D_abseil-cpp_LICENSE_FILE:FILEPATH=${ABSL_SRC_DIR}/absl_external/LICENSE
+             -DABSL_INCLUDE_DIR=${ABSL_INCLUDE_DIR}

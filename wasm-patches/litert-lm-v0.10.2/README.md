@@ -47,31 +47,68 @@ strips ` || defined(TARGET_OS_MAC)` from the conditional, and writes it
 back. Same patch unblocks both the host prebuild *and* the emcc
 cross-compile (emcc's libc also lacks `<fp.h>`).
 
-## TODO (not yet authored)
+### 1.3 — 1.6 CoreFoundation framework on Apple host
 
-The following are surfaced patches expected to be needed once the host
-prebuild succeeds and the cross-compile stage runs. They'll be added to
-this directory as the build hits each one.
+protobuf v6.31.1 + sentencepiece + tflite + litert all build CLI tools
+that link `libabsl_time_zone.a`, which references `CFTimeZoneGetName`,
+`CFStringGetMaximumSizeForEncoding`, etc. on Apple. None of those CMake
+files add `-framework CoreFoundation` to their executables' link command,
+so the link fails with "Undefined symbols for architecture arm64".
 
-- **Per-dep emcc compatibility**: abseil, flatbuffers, protobuf,
-  sentencepiece, tokenizers-cpp (Rust+cxx bridge), antlr4, llguidance
-  (Rust target wasm32-unknown-emscripten), TFLite (likely the largest
-  patch surface). Each may need:
-  - Pthread guards (emcc pthreads need SharedArrayBuffer + COOP/COEP).
-  - Atomic intrinsics fallbacks where wasm32 lacks the host's set.
-  - File I/O paths that assume `mmap` or `O_DIRECT` (gate to alternative).
-- **Skip miniaudio** entirely on emcc (audio inference unsupported on
-  WASM v1).
-- **Static archive output** target for `libLiteRtLmC.a`. The upstream
-  build produces a `cc_binary(linkshared=True)` (Bazel) or shared-lib
-  CMake target; we need a sibling `add_library(... STATIC ...)` aggregator
-  for Rust linking, similar to LiteRT's `litert_runtime_c_api_static`.
-- **Disable threading-required components** for v1 (kv-cache locks,
-  sampler thread pool, etc.) or stub them with single-threaded variants.
+Fix: in each affected `cmake/packages/<dep>/<dep>.cmake`, add to
+`ExternalProject_Add`'s `CMAKE_ARGS`:
+```cmake
+"$<$<PLATFORM_ID:Darwin>:-DCMAKE_EXE_LINKER_FLAGS=-framework CoreFoundation>"
+```
+The generator expression evaluates to empty on non-Apple, so the patch
+is a no-op on Linux/Windows.
 
-## Verified
+Applied to: protobuf, sentencepiece, tflite, litert.
 
-The `01-cmake-emscripten-support.patch` lets the host prebuild stage
-configure + start building under emcmake on macOS arm64 (May 2026,
-emsdk 5.0.7). The full host prebuild has not yet completed end-to-end as
-of this commit; we're iterating in `/tmp/litert-lm-wasm-spike-build`.
+## TODO (next walls expected, not yet patched)
+
+After the above patches the host prebuild progresses to ~46% (sentencepiece
+done, working on tokenizers-cpp). Next surfaced wall:
+
+- **tokenizers-cpp's Rust onig_sys env leak**: the Rust crate's `cc-rs`
+  wrapper picks up `CC=emcc` from the inherited env, then fails with
+  "stdlib.h not found" because emcc's clang doesn't have a host sysroot.
+  Fix: explicitly set `CC_aarch64_apple_darwin` /
+  `CC_x86_64_unknown_linux_gnu` (per-target Rust env vars) to native
+  clang in the orchestrator's BUILD_COMMAND env wrapper. Or pass
+  `CARGO_TARGET_<TARGET>_LINKER` and friends.
+
+Beyond that, expected (untested):
+
+- **Cross-compile stage (emcc)**: every C++ dep needs to compile cleanly
+  under emcc — pthread-dependent code, atomic intrinsics, mmap-based
+  file I/O all common pain points. Likely 10-20 more incremental patches
+  before all 22 deps build clean to wasm32-unknown-emscripten.
+- **`miniaudio`**: skip entirely on emcc (audio inference is unsupported
+  on WASM v1; miniaudio's Web/Emscripten path adds complexity we don't
+  need yet).
+- **Static archive aggregator** for `libLiteRtLmC.a` — upstream produces
+  a shared-lib CMake target; we need an `add_library(... STATIC ...)`
+  sibling for Rust linking, mirroring LiteRT's
+  `litert_runtime_c_api_static`.
+- **Threading**: disable thread-pool dispatch in samplers / kv-cache for
+  single-threaded WASM v1, or wrap behind `#ifdef __EMSCRIPTEN__`
+  fallbacks.
+
+## Verified (status: in progress, 0.4.0 spike)
+
+The `01-cmake-emscripten-support.patch` (5 distinct fixes consolidated
+into one patch + 1 helper script) gets the host prebuild to ~46%
+(absl, flatbuffers, gtest, re2, opencl_headers, libpng, antlr4, libz,
+libpng16, kissfft-float, protobuf, sentencepiece all built natively on
+macOS arm64). Tested with emsdk 5.0.7, macOS arm64, May 2026.
+
+Build command pattern that was working at checkpoint:
+```bash
+git apply 01-cmake-emscripten-support.patch
+mkdir -p cmake/scripts && cp .../patch_libpng_pngpriv.cmake cmake/scripts/
+emcmake cmake -B build-wasm -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLITERTLM_TOOLCHAIN_ARGS="-DCMAKE_BUILD_TYPE=Release"
+emmake cmake --build build-wasm -j 8
+```
