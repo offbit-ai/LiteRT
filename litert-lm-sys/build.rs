@@ -24,26 +24,49 @@ const LITERT_LM_HEADERS_VERSION: &str = "0.10.2";
 
 const MIRROR_BASE: &str = "https://github.com/offbit-ai/LiteRT/releases/download/litert-lm-v0.10.2";
 
-struct Prebuilt {
-    url_filename: &'static str,
-    local_name: &'static str,
-    sha256: &'static str,
-    size: u64,
+enum Prebuilt {
+    /// Desktop targets: a single dynamic library downloaded from the mirror.
+    Dylib {
+        url_filename: &'static str,
+        local_name: &'static str,
+        sha256: &'static str,
+        size: u64,
+    },
+    /// WASM target: a tar.gz of static archives produced by the
+    /// `build-litertlm-wasm.yml` GitHub Actions workflow (CMake+emscripten
+    /// build of LiteRT-LM v0.10.2 + our `wasm-patches/litert-lm-v0.10.2/`
+    /// CMake patches). Contains libLiteRtLmC.a plus its full transitive
+    /// closure (TFLite, abseil, sentencepiece, tokenizers-cpp, antlr4,
+    /// llguidance Rust glue, libpng, kissfft, zlib, minizip, minja).
+    /// build.rs globs lib*.a from the cache and emits -lstatic for each.
+    WasmTarball {
+        url: &'static str,
+        sha256: &'static str,
+        size: u64,
+    },
 }
 
 fn prebuilt_for(target: &str) -> Option<Prebuilt> {
     Some(match target {
-        "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => Prebuilt {
+        "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => Prebuilt::Dylib {
             url_filename: "libLiteRtLmC.so",
             local_name: "libLiteRtLmC.so",
             sha256: "82a524d6361d15f3b5808549e1d8cf757132cd58282986a240456b7d9f989bc1",
             size: 45_413_552,
         },
-        "aarch64-apple-darwin" => Prebuilt {
+        "aarch64-apple-darwin" => Prebuilt::Dylib {
             url_filename: "libLiteRtLmC.dylib",
             local_name: "libLiteRtLmC.dylib",
             sha256: "616c71d3f52d7b6e7847cba2a3876890aeac993e27ec147dbf1c7de4fd786456",
             size: 28_862_192,
+        },
+        "wasm32-unknown-emscripten" => Prebuilt::WasmTarball {
+            url: "https://github.com/offbit-ai/LiteRT/releases/download/\
+                  litert-lm-wasm-v0.10.2/libLiteRtLmC-wasm32-emscripten.tar.gz",
+            // TODO(0.4.0-rc): replace placeholder after `build-litertlm-wasm.yml`
+            // uploads the artifact and we record the SHA-256.
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            size: 0,
         },
         _ => return None,
     })
@@ -183,50 +206,62 @@ fn cache_dir_for(target: &str) -> PathBuf {
 
 fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
     fs::create_dir_all(cache_dir).expect("create cache dir");
+    match pb {
+        Prebuilt::Dylib {
+            url_filename,
+            local_name,
+            sha256,
+            size,
+        } => ensure_dylib(url_filename, local_name, sha256, *size, cache_dir),
+        Prebuilt::WasmTarball { url, sha256, size } => {
+            ensure_wasm_tarball(url, sha256, *size, cache_dir)
+        }
+    }
+}
 
-    let dest = cache_dir.join(pb.local_name);
-    let marker = cache_dir.join(format!("{}.verified", pb.local_name));
+fn ensure_dylib(
+    url_filename: &str,
+    local_name: &str,
+    sha256: &str,
+    size: u64,
+    cache_dir: &Path,
+) {
+    let dest = cache_dir.join(local_name);
+    let marker = cache_dir.join(format!("{local_name}.verified"));
     if dest.exists() && marker.exists() {
         return;
     }
 
     if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
         panic!(
-            "litert-lm-sys: LITERT_NO_DOWNLOAD set but {} missing from {}",
-            pb.local_name,
+            "litert-lm-sys: LITERT_NO_DOWNLOAD set but {local_name} missing from {}",
             cache_dir.display()
         );
     }
 
-    let url = format!("{MIRROR_BASE}/{}", pb.url_filename);
+    let url = format!("{MIRROR_BASE}/{url_filename}");
     println!(
-        "cargo:warning=litert-lm-sys: downloading {} ({} bytes) from mirror (first build only)",
-        pb.local_name, pb.size,
+        "cargo:warning=litert-lm-sys: downloading {local_name} ({size} bytes) from mirror (first build only)",
     );
 
-    let mut buf = Vec::with_capacity(pb.size as usize);
+    let mut buf = Vec::with_capacity(size as usize);
     ureq::get(&url)
         .call()
         .unwrap_or_else(|e| panic!("GET {url}: {e}"))
         .into_reader()
         .read_to_end(&mut buf)
-        .unwrap_or_else(|e| panic!("read {}: {e}", pb.local_name));
+        .unwrap_or_else(|e| panic!("read {local_name}: {e}"));
 
-    if buf.len() as u64 != pb.size {
+    if buf.len() as u64 != size {
         panic!(
-            "litert-lm-sys: size mismatch for {}: expected {}, got {}",
-            pb.local_name,
-            pb.size,
+            "litert-lm-sys: size mismatch for {local_name}: expected {size}, got {}",
             buf.len()
         );
     }
 
     let hash = hex(&Sha256::digest(&buf));
-    if hash != pb.sha256 {
-        panic!(
-            "litert-lm-sys: SHA-256 mismatch for {}: expected {}, got {hash}",
-            pb.local_name, pb.sha256
-        );
+    if hash != sha256 {
+        panic!("litert-lm-sys: SHA-256 mismatch for {local_name}: expected {sha256}, got {hash}");
     }
 
     fs::write(&dest, &buf).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
@@ -238,12 +273,64 @@ fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
     // header padding.
     if dest.extension().is_some_and(|e| e == "dylib") {
         let _ = std::process::Command::new("install_name_tool")
-            .args(["-id", &format!("@rpath/{}", pb.local_name)])
+            .args(["-id", &format!("@rpath/{local_name}")])
             .arg(&dest)
             .status();
     }
 
-    fs::write(&marker, pb.sha256).expect("write verified marker");
+    fs::write(&marker, sha256).expect("write verified marker");
+}
+
+fn ensure_wasm_tarball(url: &str, sha256: &str, size: u64, cache_dir: &Path) {
+    if sha256.chars().all(|c| c == '0') {
+        panic!(
+            "litert-lm-sys: wasm32-unknown-emscripten prebuilt not yet published.\n\
+             Run the `build-litertlm-wasm.yml` GitHub Actions workflow, then update\n\
+             the SHA-256 placeholder in litert-lm-sys/build.rs. Or set\n\
+             LITERT_LM_LIB_DIR to a directory of `.a` files from a local build\n\
+             (see wasm-patches/litert-lm-v0.10.2/).",
+        );
+    }
+    let marker = cache_dir.join(".wasm-tarball.verified");
+    if marker.exists() && fs::read_to_string(&marker).ok().as_deref() == Some(sha256) {
+        return;
+    }
+    if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
+        panic!(
+            "litert-lm-sys: LITERT_NO_DOWNLOAD set but WASM tarball missing from {}",
+            cache_dir.display()
+        );
+    }
+
+    println!(
+        "cargo:warning=litert-lm-sys: downloading WASM static-archive bundle \
+         {url} into {} (first build only)",
+        cache_dir.display(),
+    );
+
+    let mut buf = Vec::with_capacity(size as usize);
+    ureq::get(url)
+        .call()
+        .unwrap_or_else(|e| panic!("GET {url}: {e}"))
+        .into_reader()
+        .read_to_end(&mut buf)
+        .unwrap_or_else(|e| panic!("read tarball: {e}"));
+    if buf.len() as u64 != size {
+        panic!(
+            "litert-lm-sys: WASM tarball size mismatch: expected {size}, got {}",
+            buf.len()
+        );
+    }
+    let hash = hex(&Sha256::digest(&buf));
+    if hash != sha256 {
+        panic!("litert-lm-sys: WASM tarball SHA-256 mismatch: expected {sha256}, got {hash}");
+    }
+    let decoder = flate2::read::GzDecoder::new(buf.as_slice());
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(cache_dir)
+        .unwrap_or_else(|e| panic!("extract tarball: {e}"));
+    fs::write(&marker, sha256).expect("write wasm tarball marker");
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -263,8 +350,43 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
     if let Some(dir) = lib_dir {
         let dir = dir.display();
         println!("cargo:rustc-link-search=native={dir}");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+        if target != "wasm32-unknown-emscripten" {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+        }
         println!("cargo:lib_dir={dir}");
+    }
+
+    if target == "wasm32-unknown-emscripten" {
+        // Glob lib*.a from the cache and emit -lstatic for each, same pattern
+        // as litert-sys. wasm-ld dead-strips unreferenced syms.
+        if let Some(dir) = lib_dir {
+            let mut libs: Vec<String> = fs::read_dir(dir)
+                .expect("read lib_dir for wasm")
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    name.strip_prefix("lib")
+                        .and_then(|n| n.strip_suffix(".a"))
+                        .map(str::to_owned)
+                })
+                .collect();
+            // Roots first (litert_lm, litert) so the linker resolves them
+            // before transitive deps.
+            libs.sort_by_key(|n| {
+                if n.starts_with("litert_lm") {
+                    0
+                } else if n.starts_with("litert") {
+                    1
+                } else {
+                    2
+                }
+            });
+            for lib in libs {
+                println!("cargo:rustc-link-lib=static={lib}");
+            }
+        }
+        println!("cargo:rustc-link-lib=c++");
+        return;
     }
 
     println!("cargo:rustc-link-lib=dylib=LiteRtLmC");

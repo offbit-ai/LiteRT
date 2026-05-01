@@ -1,0 +1,116 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 63ff28e..0bff556 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -27,6 +27,22 @@ if(NOT DEFINED LITERTLM_HOST_FLATC)
+     set(LITERTLM_HOST_FLATC_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/build/external/flatbuffers/install/bin")
+ endif()
+ 
++# Locate native host compilers for the prebuild stage. When invoked under
++# `emcmake` (or any cross-compile env), the parent CMake's CC/CXX point at
++# the cross compiler — but the prebuild builds host-runnable tools (protoc,
++# flatc) and must use the native compiler. Allow override via cache args
++# in case the host has neither clang nor gcc on PATH.
++if(NOT DEFINED LITERTLM_HOST_C_COMPILER)
++    find_program(LITERTLM_HOST_C_COMPILER NAMES clang gcc cc
++        HINTS /usr/bin /usr/local/bin /opt/homebrew/bin
++        DOC "Native host C compiler for the prebuild (host-tool) stage")
++endif()
++if(NOT DEFINED LITERTLM_HOST_CXX_COMPILER)
++    find_program(LITERTLM_HOST_CXX_COMPILER NAMES clang++ g++ c++
++        HINTS /usr/bin /usr/local/bin /opt/homebrew/bin
++        DOC "Native host C++ compiler for the prebuild (host-tool) stage")
++endif()
++
+ include(ExternalProject)
+ 
+ set(LITERTLM_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "LiteRT-LM: Absolute path to the repository root")
+@@ -36,6 +52,14 @@ set(_PREBUILD_DEPENDENCY "")
+ 
+ if(LITERTLM_TOOLCHAIN_ARGS)
+     message(STATUS "[LiteRTLM] Toolchain args detected. Generating Host Prebuild phase...")
++    if(NOT LITERTLM_HOST_C_COMPILER OR NOT LITERTLM_HOST_CXX_COMPILER)
++        message(FATAL_ERROR
++            "[LiteRTLM] Cross-compiling but no native host compiler found.\n"
++            "  Set -DLITERTLM_HOST_C_COMPILER=/path/to/clang and\n"
++            "  -DLITERTLM_HOST_CXX_COMPILER=/path/to/clang++.")
++    endif()
++    message(STATUS "[LiteRTLM] Host C compiler:   ${LITERTLM_HOST_C_COMPILER}")
++    message(STATUS "[LiteRTLM] Host C++ compiler: ${LITERTLM_HOST_CXX_COMPILER}")
+     ExternalProject_Add(
+         litert_lm_prebuild
+ 
+@@ -48,8 +72,31 @@ if(LITERTLM_TOOLCHAIN_ARGS)
+         DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/download"
+         INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/prebuild/install"
+ 
+-        CMAKE_ARGS
+-            "-DLITERTLM_PROJECT_ROOT=${LITERTLM_PROJECT_ROOT}"
++        # Force a clean native build environment for the host prebuild
++        # stage. ExternalProject_Add inherits the parent's env, which under
++        # emcmake puts CC=emcc / CMAKE_TOOLCHAIN_FILE=Emscripten.cmake into
++        # scope. Run cmake via -E env --unset on BOTH the configure and
++        # build steps — the build step recursively spawns child cmake
++        # invocations (for absl/gtest/re2/etc. ExternalProjects inside the
++        # prebuild's own CMakeLists.txt) which would otherwise re-pick-up
++        # emcc from their inherited env.
++        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
++            --unset=CC --unset=CXX
++            --unset=CMAKE_TOOLCHAIN_FILE
++            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
++            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
++            ${CMAKE_COMMAND} -S <SOURCE_DIR> -B <BINARY_DIR>
++                "-DCMAKE_C_COMPILER=${LITERTLM_HOST_C_COMPILER}"
++                "-DCMAKE_CXX_COMPILER=${LITERTLM_HOST_CXX_COMPILER}"
++                "-DLITERTLM_PROJECT_ROOT=${LITERTLM_PROJECT_ROOT}"
++                "-DCMAKE_BUILD_TYPE=Release"
++
++        BUILD_COMMAND ${CMAKE_COMMAND} -E env
++            --unset=CC --unset=CXX
++            --unset=CMAKE_TOOLCHAIN_FILE
++            --unset=EMSDK --unset=EMSDK_NODE --unset=EMSDK_PYTHON
++            --unset=EMCC_CFLAGS --unset=EMCC_FORCE_STDLIBS
++            ${CMAKE_COMMAND} --build <BINARY_DIR>
+ 
+         INSTALL_COMMAND ""
+     )
+diff --git a/cmake/modules/fetch_content.cmake b/cmake/modules/fetch_content.cmake
+index a3f24e8..3b26d3b 100644
+--- a/cmake/modules/fetch_content.cmake
++++ b/cmake/modules/fetch_content.cmake
+@@ -80,12 +80,22 @@ FetchContent_Populate(llguidance)
+ 
+ # --- LibPNG ---
+ set(LIBPNG_SRC_DIR ${THIRD_PARTY_DIR}/libpng CACHE PATH "Path to libpng source directory")
++# libpng v1.6.40's pngpriv.h includes <fp.h> when TARGET_OS_MAC is defined,
++# but TARGET_OS_MAC is set on *modern* macOS too (and fp.h is a Classic Mac
++# header that no longer exists). Strip TARGET_OS_MAC from that conditional
++# so we fall through to the <math.h> branch. Same patch is needed on emcc
++# because emscripten's libc doesn't have <fp.h> either.
++#
++# Use sed in-place. macOS sed needs `-i ''` (BSD), GNU sed accepts `-i`.
+ FetchContent_Declare(
+   libpng_lib
+   GIT_REPOSITORY https://github.com/glennrp/libpng.git
+   GIT_TAG v1.6.40
+   GIT_SHALLOW true
+   SOURCE_DIR ${LIBPNG_SRC_DIR}
++  PATCH_COMMAND
++    ${CMAKE_COMMAND} -DPNGPRIV_H=${LIBPNG_SRC_DIR}/pngpriv.h
++                     -P ${LITERTLM_PACKAGES_DIR}/../scripts/patch_libpng_pngpriv.cmake
+ )
+ block()
+   set(PNG_SHARED OFF)
+diff --git a/cmake/scripts/patch_libpng_pngpriv.cmake b/cmake/scripts/patch_libpng_pngpriv.cmake
+new file mode 100644
+index 0000000..168af21
+--- /dev/null
++++ b/cmake/scripts/patch_libpng_pngpriv.cmake
+@@ -0,0 +1,7 @@
++# Patches libpng's pngpriv.h to drop TARGET_OS_MAC from the conditional that
++# triggers <fp.h> inclusion. Cross-platform via CMake file(STRINGS) +
++# file(WRITE) instead of relying on sed/perl flag differences.
++file(READ "${PNGPRIV_H}" content)
++string(REPLACE " || defined(TARGET_OS_MAC)" "" content "${content}")
++file(WRITE "${PNGPRIV_H}" "${content}")
++message(STATUS "[litertlm-patch] removed TARGET_OS_MAC from ${PNGPRIV_H}")
