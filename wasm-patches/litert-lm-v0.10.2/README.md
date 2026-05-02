@@ -95,6 +95,30 @@ Beyond that, expected (untested):
   single-threaded WASM v1, or wrap behind `#ifdef __EMSCRIPTEN__`
   fallbacks.
 
+## Linux CI status (May 2026)
+
+After 8 iterations on `ubuntu-latest` with the patches collected here,
+the **host prebuild stage now fully completes**. We've crossed into the
+**cross-compile (emcc) stage**, which is the actual emscripten build of
+libLiteRtLmC.a + transitive deps for `wasm32-unknown-emscripten`.
+
+First wall in the cross stage: libpng v1.6.40's `find_package(ZLIB)`
+fails under emcmake because the cross-compile zlib target isn't visible
+to libpng's CMake (host build worked because zlib_lib FetchContent
+target was in scope; cross stage runs in a separate ExternalProject so
+the target isn't there). Fix direction: pass
+`-DZLIB_LIBRARY=z -DZLIB_INCLUDE_DIR=$EMSCRIPTEN_SYSROOT/include` via
+the litert_lm cross-stage CMAKE_ARGS, or `-sUSE_ZLIB=1` link flag, or
+strip libpng dependency on emcc (we only need it for image inputs,
+not text Conversation).
+
+Current `wasm-patches/litert-lm-v0.10.2/01-cmake-emscripten-support.patch`
++ helper scripts (lines below) get the build to this point. Each
+iteration is ~1.5h CI; expect 5-15 more iterations to clear the cross
+stage based on the 22-dep surface.
+
+### Pre-Linux-CI snapshot (kept for context)
+
 ## Verified (status: ~93% through host prebuild, 0.4.0 spike)
 
 After 9 distinct fixes consolidated into `01-cmake-emscripten-support.patch`
