@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 63ff28e..d7cd2ed 100644
+index 63ff28e..a474c51 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -27,6 +27,22 @@ if(NOT DEFINED LITERTLM_HOST_FLATC)
@@ -104,10 +104,17 @@ index 63ff28e..d7cd2ed 100644
  
          INSTALL_COMMAND ""
      )
-@@ -94,6 +171,27 @@ ExternalProject_Add(
+@@ -94,6 +171,34 @@ ExternalProject_Add(
          "-DLITERTLM_HOST_FLATC=${LITERTLM_HOST_FLATC}"
          "-DLITERTLM_HOST_FLATC_BIN_DIR=${LITERTLM_HOST_FLATC_BIN_DIR}"
  
++        # re2_external's find_package(absl REQUIRED) was failing in MODULE
++        # mode (it looks for Findabsl.cmake which doesn't exist; abseil
++        # ships abslConfig.cmake for CONFIG mode). Force CONFIG mode
++        # globally so all sub-ExternalProjects use the absl_DIR /
++        # CMAKE_PREFIX_PATH hints we pass them.
++        "-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON"
++
 +    # During the cross stage's build, cargo invokes Rust crates' build.rs
 +    # scripts which need to compile + link a HOST executable (not wasm).
 +    # The default build env has CC=emcc/CXX=em++ from the parent emcmake;
