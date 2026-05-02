@@ -97,25 +97,59 @@ Beyond that, expected (untested):
 
 ## Linux CI status (May 2026)
 
-After 8 iterations on `ubuntu-latest` with the patches collected here,
-the **host prebuild stage now fully completes**. We've crossed into the
-**cross-compile (emcc) stage**, which is the actual emscripten build of
-libLiteRtLmC.a + transitive deps for `wasm32-unknown-emscripten`.
+After **13 iterations** on `ubuntu-latest`, the **host prebuild stage
+fully completes**. Cross stage progress is incremental:
 
-First wall in the cross stage: libpng v1.6.40's `find_package(ZLIB)`
-fails under emcmake because the cross-compile zlib target isn't visible
-to libpng's CMake (host build worked because zlib_lib FetchContent
-target was in scope; cross stage runs in a separate ExternalProject so
-the target isn't there). Fix direction: pass
-`-DZLIB_LIBRARY=z -DZLIB_INCLUDE_DIR=$EMSCRIPTEN_SYSROOT/include` via
-the litert_lm cross-stage CMAKE_ARGS, or `-sUSE_ZLIB=1` link flag, or
-strip libpng dependency on emcc (we only need it for image inputs,
-not text Conversation).
+```
+✅ Host prebuild — full 100%
+✅ Cross stage: opencl_headers_external configured
+✅ Cross stage: absl_external built + INSTALLED (abslConfig.cmake exists at
+   build-wasm/litert_lm/build/external/abseil-cpp/install/lib/cmake/absl/)
+❌ Cross stage: re2_external configure — find_package(absl REQUIRED)
+   fails despite absl_DIR being passed in re2's CMAKE_ARGS
+```
 
-Current `wasm-patches/litert-lm-v0.10.2/01-cmake-emscripten-support.patch`
-+ helper scripts (lines below) get the build to this point. Each
-iteration is ~1.5h CI; expect 5-15 more iterations to clear the cross
-stage based on the 22-dep surface.
+**Iter 13 wall**: re2's `find_package(absl)` calls in MODULE mode and
+fails — abseil only ships abslConfig.cmake (CONFIG mode), no
+Findabsl.cmake. We tried setting `CMAKE_FIND_PACKAGE_PREFER_CONFIG=ON`
+both at the orchestrator level and via `LITERTLM_TOOLCHAIN_ARGS` (the
+mechanism for propagating into every cross-stage ExternalProject), but
+the flag doesn't reach re2's nested cmake invocation. Either:
+- LITERTLM_TOOLCHAIN_ARGS's semicolon-list parsing isn't unpacking
+  `-DCMAKE_BUILD_TYPE=Release;-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON`
+  into separate args
+- Or re2.cmake constructs CMAKE_ARGS in a way that drops the flag
+
+**Recommended next investigation** (for a follow-on session):
+1. Add `message(STATUS "absl_DIR=${absl_DIR}")` to re2.cmake before
+   ExternalProject_Add to verify the value is non-empty.
+2. Try directly editing re2.cmake's CMAKE_ARGS to inline
+   `-Dabsl_DIR=...` and `-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON` rather
+   than relying on `${absl_DIR}` variable expansion.
+3. Or patch re2's source CMakeLists.txt to call `find_package(absl
+   CONFIG REQUIRED)` explicitly — bypasses the MODULE-vs-CONFIG choice
+   entirely.
+
+## Stopping point — auto-mode session
+
+13 patches authored, ~22h CI time burned. The pattern of each fix
+uncovering the next per-dep variable-propagation issue across nested
+ExternalProjects (orchestrator → litert_lm → cross deps) shows the
+realistic path to a working tarball is **many more iterations**, each
+~1.5h CI + 5-30min debugging.
+
+The infrastructure built in this session is durable:
+- [build-litert-lm-wasm.yml](../../.github/workflows/build-litert-lm-wasm.yml)
+  runs on every push, applies patches, captures artifacts on failure.
+- [01-cmake-emscripten-support.patch](01-cmake-emscripten-support.patch)
+  + the 4 helper scripts in `cmake/scripts/` reproduce the current
+  ~1/3 cross-stage state on a fresh checkout.
+- The exact per-dep wall pattern is documented per-iter in commit
+  history (`git log --oneline | grep '0.4.0'`).
+
+A follow-on session can resume from this checkpoint — likely faster
+than redoing the patches from scratch since the wall pattern is now
+well-understood.
 
 ### Pre-Linux-CI snapshot (kept for context)
 
