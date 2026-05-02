@@ -22,8 +22,11 @@ set(_skews
     "runtime/executor/llm_executor_settings_utils.cc|gpu_compilation_options\\.SetKernelBatchSize\\([^;]*\\);"
     "runtime/executor/llm_executor_settings_utils.cc|runtime_options\\.SetDisableDelegateClustering\\([^;]*\\);"
     # 2. SimpleTensor::HasQuantization / PerTensorQuantization — added to
-    #    SimpleTensor's C++ API later.
-    "runtime/executor/llm_litert_npu_compiled_model_executor.cc|if \\(logits_tensor\\.HasQuantization\\(\\)\\) \\{[^}]*\\}"
+    #    SimpleTensor's C++ API later. The if-block has an else branch
+    #    (logs a warning, falls back to default scale=1.0, zero_point=0).
+    #    Just take the else-branch path always: the LITERT_ASSIGN_OR_RETURN
+    #    above already initialised quantization_params to those defaults.
+    "runtime/executor/llm_litert_npu_compiled_model_executor.cc|if \\(logits_tensor\\.HasQuantization\\(\\)\\) \\{[^}]*\\} else \\{[^}]*\\}"
 )
 
 foreach(skew ${_skews})
