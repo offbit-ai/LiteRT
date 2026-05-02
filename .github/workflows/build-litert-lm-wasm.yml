@@ -95,9 +95,15 @@ jobs:
       - name: configure (emcmake)
         working-directory: /tmp/litert-lm
         run: |
+          # LITERTLM_TOOLCHAIN_ARGS propagates into every cross-stage
+          # ExternalProject's CMAKE_ARGS via litert_lm/CMakeLists.txt, so
+          # any flag we want everywhere goes here. Critical:
+          # - PREFER_CONFIG=ON: re2 (and friends) call find_package(absl)
+          #   in MODULE mode by default and there's no Findabsl.cmake;
+          #   abseil ships abslConfig.cmake for CONFIG mode.
           emcmake cmake -B build-wasm -S . \
             -DCMAKE_BUILD_TYPE=Release \
-            -DLITERTLM_TOOLCHAIN_ARGS="-DCMAKE_BUILD_TYPE=Release"
+            -DLITERTLM_TOOLCHAIN_ARGS="-DCMAKE_BUILD_TYPE=Release;-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON"
 
       - name: build
         working-directory: /tmp/litert-lm
