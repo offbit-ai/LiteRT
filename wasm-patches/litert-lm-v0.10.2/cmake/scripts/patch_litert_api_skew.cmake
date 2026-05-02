@@ -27,6 +27,12 @@ set(_skews
     #    Just take the else-branch path always: the LITERT_ASSIGN_OR_RETURN
     #    above already initialised quantization_params to those defaults.
     "runtime/executor/llm_litert_npu_compiled_model_executor.cc|if \\(logits_tensor\\.HasQuantization\\(\\)\\) \\{[^}]*\\} else \\{[^}]*\\}"
+    # 3. LogTensor() call references a function defined in
+    #    runtime/util/log_tensor_buffer.cc that LiteRT-LM v0.10.2's
+    #    CMake never compiles into any library. The call is gated on a
+    #    debug `num_logits_to_print_after_decode > 0` setting that's 0
+    #    by default — stubbing is harmless for the spike.
+    "runtime/executor/llm_litert_compiled_model_executor.cc|if \\(settings && settings->num_logits_to_print_after_decode > 0\\) \\{[^}]*\\}"
 )
 
 foreach(skew ${_skews})
