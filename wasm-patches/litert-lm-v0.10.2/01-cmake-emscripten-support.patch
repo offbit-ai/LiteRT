@@ -105,7 +105,7 @@ index 63ff28e..d24a637 100644
          INSTALL_COMMAND ""
      )
 diff --git a/cmake/modules/fetch_content.cmake b/cmake/modules/fetch_content.cmake
-index a3f24e8..3efe952 100644
+index a3f24e8..18aa052 100644
 --- a/cmake/modules/fetch_content.cmake
 +++ b/cmake/modules/fetch_content.cmake
 @@ -80,12 +80,22 @@ FetchContent_Populate(llguidance)
@@ -152,6 +152,56 @@ index a3f24e8..3efe952 100644
      get_target_property(ZLIB_INCLUDE_DIR zlib INTERFACE_INCLUDE_DIRECTORIES)
      set(ZLIB_LIBRARY zlib)
    elseif(TARGET zlibstatic)
+@@ -221,21 +243,34 @@ endif()
+ 
+ # --- ZLIB ---
+ set(ZLIB_SRC_DIR ${THIRD_PARTY_DIR}/zlib CACHE PATH "Path to zlib source directory")
+-FetchContent_Declare(
+-  zlib_lib
+-  GIT_REPOSITORY https://github.com/madler/zlib
+-  GIT_TAG master
+-  GIT_SHALLOW true
+-  SOURCE_DIR ${ZLIB_SRC_DIR}
+-)
+-block()
+-  set(BUILD_SHARED_LIBS OFF)
+-  FetchContent_MakeAvailable(zlib_lib)
+-endblock()
+-if(TARGET zlibstatic)
+-  add_library(zlib_lib ALIAS zlibstatic)
+-elseif(TARGET zlib)
+-  add_library(zlib_lib ALIAS zlib)
++if(EMSCRIPTEN)
++  # Skip the zlib FetchContent build entirely under emcc — zlib master's
++  # CMakeLists unconditionally declares an `add_library(zlib SHARED ...)`
++  # target which emcc rejects ("target platform does not support dynamic
++  # linking"). Instead we lean on emscripten's bundled zlib port (built
++  # ahead of time via `embuilder build zlib` in the CI workflow) and
++  # expose `zlib_lib` as an INTERFACE target that propagates the
++  # -sUSE_ZLIB=1 link flag to consumers.
++  add_library(zlib_lib INTERFACE)
++  target_compile_options(zlib_lib INTERFACE -sUSE_ZLIB=1)
++  target_link_options(zlib_lib INTERFACE -sUSE_ZLIB=1)
++else()
++  FetchContent_Declare(
++    zlib_lib
++    GIT_REPOSITORY https://github.com/madler/zlib
++    GIT_TAG master
++    GIT_SHALLOW true
++    SOURCE_DIR ${ZLIB_SRC_DIR}
++  )
++  block()
++    set(BUILD_SHARED_LIBS OFF)
++    FetchContent_MakeAvailable(zlib_lib)
++  endblock()
++  if(TARGET zlibstatic)
++    add_library(zlib_lib ALIAS zlibstatic)
++  elseif(TARGET zlib)
++    add_library(zlib_lib ALIAS zlib)
++  endif()
+ endif()
+ 
+ # --- Path Exports ---
 diff --git a/cmake/packages/litert/litert.cmake b/cmake/packages/litert/litert.cmake
 index f314c92..29c47a1 100644
 --- a/cmake/packages/litert/litert.cmake
