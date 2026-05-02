@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 63ff28e..d24a637 100644
+index 63ff28e..d7cd2ed 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -27,6 +27,22 @@ if(NOT DEFINED LITERTLM_HOST_FLATC)
@@ -104,6 +104,34 @@ index 63ff28e..d24a637 100644
  
          INSTALL_COMMAND ""
      )
+@@ -94,6 +171,27 @@ ExternalProject_Add(
+         "-DLITERTLM_HOST_FLATC=${LITERTLM_HOST_FLATC}"
+         "-DLITERTLM_HOST_FLATC_BIN_DIR=${LITERTLM_HOST_FLATC_BIN_DIR}"
+ 
++    # During the cross stage's build, cargo invokes Rust crates' build.rs
++    # scripts which need to compile + link a HOST executable (not wasm).
++    # The default build env has CC=emcc/CXX=em++ from the parent emcmake;
++    # cargo's cc-rs picks those up and emcc tries to link a host binary
++    # (failing with `wasm-ld: error: unknown argument: --as-needed` etc).
++    # Setting per-host-triple CC_/CXX_ env vars steers cc-rs back to
++    # native clang for build scripts while leaving CC=emcc in place for
++    # the actual cross compile.
++    BUILD_COMMAND ${CMAKE_COMMAND} -E env
++        "CC_aarch64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++        "CXX_aarch64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++        "CC_x86_64_apple_darwin=${LITERTLM_HOST_C_COMPILER}"
++        "CXX_x86_64_apple_darwin=${LITERTLM_HOST_CXX_COMPILER}"
++        "CC_x86_64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++        "CXX_x86_64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
++        "CC_aarch64_unknown_linux_gnu=${LITERTLM_HOST_C_COMPILER}"
++        "CXX_aarch64_unknown_linux_gnu=${LITERTLM_HOST_CXX_COMPILER}"
++        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=${LITERTLM_HOST_C_COMPILER}"
++        "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=${LITERTLM_HOST_C_COMPILER}"
++        ${CMAKE_COMMAND} --build <BINARY_DIR>
++
+     INSTALL_COMMAND ""
+     BUILD_ALWAYS TRUE
+ )
 diff --git a/cmake/modules/fetch_content.cmake b/cmake/modules/fetch_content.cmake
 index a3f24e8..18aa052 100644
 --- a/cmake/modules/fetch_content.cmake
