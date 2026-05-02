@@ -80,6 +80,11 @@ jobs:
           # source uses but the LiteRT commit it pins (fb16353a648) doesn't
           # define. Generic skew-stubber walks a list of (file, regex) pairs.
           cmake -DLITERTLM_ROOT=. -P cmake/scripts/patch_litert_api_skew.cmake
+          # Swap the add_executable(litert_lm_main) for an aggregator
+          # add_library so its broken final link doesn't kill the build.
+          # We need the .a archives, not the CLI binary.
+          cmake -DLITERT_LM_CMAKELISTS=cmake/packages/litert_lm/CMakeLists.txt \
+                -P cmake/scripts/patch_swap_main_to_aggregator.cmake
           ls cmake/scripts/
           git status
 
