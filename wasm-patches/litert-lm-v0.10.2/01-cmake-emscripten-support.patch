@@ -105,7 +105,7 @@ index 63ff28e..d24a637 100644
          INSTALL_COMMAND ""
      )
 diff --git a/cmake/modules/fetch_content.cmake b/cmake/modules/fetch_content.cmake
-index a3f24e8..3b26d3b 100644
+index a3f24e8..3efe952 100644
 --- a/cmake/modules/fetch_content.cmake
 +++ b/cmake/modules/fetch_content.cmake
 @@ -80,12 +80,22 @@ FetchContent_Populate(llguidance)
@@ -131,6 +131,27 @@ index a3f24e8..3b26d3b 100644
  )
  block()
    set(PNG_SHARED OFF)
+@@ -94,7 +104,19 @@ block()
+   set(SKIP_INSTALL_ALL ON)
+ 
+   # Handle ZLIB dependency injection for PNG
+-  if(TARGET zlib)
++  if(EMSCRIPTEN)
++    # emscripten ships zlib via its port system. `embuilder build zlib`
++    # populates the library at this path; the CI workflow runs that
++    # ahead of time. Setting these as CACHE FORCE overrides libpng's
++    # find_package(ZLIB REQUIRED) so we don't depend on the FetchContent
++    # zlib_lib target order or on the cross-stage having a `zlib` target.
++    set(_emcc_sysroot "$ENV{EMSDK}/upstream/emscripten/cache/sysroot")
++    set(ZLIB_INCLUDE_DIR "${_emcc_sysroot}/include" CACHE PATH "emscripten zlib include" FORCE)
++    set(ZLIB_LIBRARY "${_emcc_sysroot}/lib/wasm32-emscripten/libz.a" CACHE FILEPATH "emscripten zlib library" FORCE)
++    set(ZLIB_FOUND TRUE CACHE BOOL "emscripten zlib found" FORCE)
++    add_compile_options(-sUSE_ZLIB=1)
++    add_link_options(-sUSE_ZLIB=1)
++  elseif(TARGET zlib)
+     get_target_property(ZLIB_INCLUDE_DIR zlib INTERFACE_INCLUDE_DIRECTORIES)
+     set(ZLIB_LIBRARY zlib)
+   elseif(TARGET zlibstatic)
 diff --git a/cmake/packages/litert/litert.cmake b/cmake/packages/litert/litert.cmake
 index f314c92..29c47a1 100644
 --- a/cmake/packages/litert/litert.cmake

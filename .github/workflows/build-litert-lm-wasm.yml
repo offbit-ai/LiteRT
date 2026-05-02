@@ -52,8 +52,12 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
 
-      - name: verify emcc
-        run: emcc --version | head -2
+      - name: verify emcc + pre-build emscripten ports
+        run: |
+          emcc --version | head -2
+          # Pre-build emscripten's bundled zlib port so libpng's
+          # find_package(ZLIB) resolves during the cross-compile stage.
+          embuilder build zlib
 
       - name: install Rust + wasm32-unknown-emscripten target
         run: |
