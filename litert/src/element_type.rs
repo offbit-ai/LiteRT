@@ -7,27 +7,29 @@ use litert_sys as sys;
 /// types or IEEE/INT naming (`Float16`, `Int32`) where no Rust analogue exists.
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// The C enum is `unsigned int` under GCC and Clang but `int` under MSVC, so
+// each discriminant is cast to the `u32` this enum is.
 #[repr(u32)]
 #[non_exhaustive]
 pub enum ElementType {
-    None = sys::kLiteRtElementTypeNone,
-    Bool = sys::kLiteRtElementTypeBool,
-    Int2 = sys::kLiteRtElementTypeInt2,
-    Int4 = sys::kLiteRtElementTypeInt4,
-    Int8 = sys::kLiteRtElementTypeInt8,
-    Int16 = sys::kLiteRtElementTypeInt16,
-    Int32 = sys::kLiteRtElementTypeInt32,
-    Int64 = sys::kLiteRtElementTypeInt64,
-    UInt8 = sys::kLiteRtElementTypeUInt8,
-    UInt16 = sys::kLiteRtElementTypeUInt16,
-    UInt32 = sys::kLiteRtElementTypeUInt32,
-    UInt64 = sys::kLiteRtElementTypeUInt64,
-    Float16 = sys::kLiteRtElementTypeFloat16,
-    BFloat16 = sys::kLiteRtElementTypeBFloat16,
-    Float32 = sys::kLiteRtElementTypeFloat32,
-    Float64 = sys::kLiteRtElementTypeFloat64,
-    Complex64 = sys::kLiteRtElementTypeComplex64,
-    Complex128 = sys::kLiteRtElementTypeComplex128,
+    None = sys::kLiteRtElementTypeNone as u32,
+    Bool = sys::kLiteRtElementTypeBool as u32,
+    Int2 = sys::kLiteRtElementTypeInt2 as u32,
+    Int4 = sys::kLiteRtElementTypeInt4 as u32,
+    Int8 = sys::kLiteRtElementTypeInt8 as u32,
+    Int16 = sys::kLiteRtElementTypeInt16 as u32,
+    Int32 = sys::kLiteRtElementTypeInt32 as u32,
+    Int64 = sys::kLiteRtElementTypeInt64 as u32,
+    UInt8 = sys::kLiteRtElementTypeUInt8 as u32,
+    UInt16 = sys::kLiteRtElementTypeUInt16 as u32,
+    UInt32 = sys::kLiteRtElementTypeUInt32 as u32,
+    UInt64 = sys::kLiteRtElementTypeUInt64 as u32,
+    Float16 = sys::kLiteRtElementTypeFloat16 as u32,
+    BFloat16 = sys::kLiteRtElementTypeBFloat16 as u32,
+    Float32 = sys::kLiteRtElementTypeFloat32 as u32,
+    Float64 = sys::kLiteRtElementTypeFloat64 as u32,
+    Complex64 = sys::kLiteRtElementTypeComplex64 as u32,
+    Complex128 = sys::kLiteRtElementTypeComplex128 as u32,
 }
 
 impl ElementType {

@@ -47,3 +47,6 @@ serde_json = { workspace = true }
 zip        = { workspace = true }
 tar        = { workspace = true }
 flate2     = { workspace = true }
+# Make the MSVC import library of libLiteRt.dll (see `msvc_link_dir`).
+cc         = { workspace = true }
+object     = { workspace = true }

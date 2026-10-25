@@ -313,10 +313,13 @@ fn find_libclang() -> Result<String, env::VarError> {
         "/Library/Developer/CommandLineTools/usr/lib",
         "/usr/lib/x86_64-linux-gnu",
         "/usr/lib64",
+        // LLVM's Windows installer.
+        r"C:\Program Files\LLVM\bin",
     ] {
         if Path::new(guess).join("libclang.dylib").exists()
             || Path::new(guess).join("libclang.so").exists()
             || Path::new(guess).join("libclang.so.1").exists()
+            || Path::new(guess).join("libclang.dll").exists()
         {
             return Ok(guess.to_string());
         }

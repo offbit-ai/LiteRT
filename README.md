@@ -138,7 +138,17 @@ Alternatively, prefix individual invocations with
 `DYLD_LIBRARY_PATH=$(cargo xtask cache-dir)`, or link with
 `RUSTFLAGS="-C link-arg=-Wl,-rpath,/path/to/cache"`.
 
-Linux, Windows, and Android are unaffected.
+Linux and Android are unaffected.
+
+## Windows (MSVC)
+
+Google ships `libLiteRt.dll` without an import library, so `litert-sys`' build
+script makes `LiteRt.lib` from the DLL's exports with MSVC's `lib.exe` (found
+the way the `cc` crate finds MSVC tools) and links the DLLs beside it in its
+`OUT_DIR`, which it publishes as `DEP_LITERT_LIB_DIR`. Cargo puts that
+directory on `PATH` for `cargo run` and `cargo test`. A binary started any
+other way finds the DLLs the usual Windows way: copy the `*.dll` files of
+`DEP_LITERT_LIB_DIR` next to it when you ship it.
 
 ## WebAssembly (browser + Node.js + wasmtime)
 

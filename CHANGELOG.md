@@ -6,6 +6,22 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`litert-sys`** on `x86_64-pc-windows-msvc`: the committed bindings were
+  seeded from macOS, so `LiteRtLayout` had GCC's layout (68 bytes,
+  `dimensions` at offset 4) instead of MSVC's (72 bytes, offset 8, as
+  `litert_layout.h` asserts). Every tensor shape read back garbled (`[0, 10]`
+  for `[10, 10]`) and running a model failed. The bindings are regenerated on
+  Windows with `cargo xtask regen-bindings`, and a new test checks the
+  struct's size and offsets on every target.
+- **`litert-sys`** on MSVC: linking failed with `LNK1181: cannot open input
+  file 'LiteRt.lib'`, since the prebuilts have no import library. build.rs now
+  makes one from the DLL's exports (see the README's Windows section), and no
+  longer passes the `-Wl,-rpath` flag `link.exe` ignores; nor does `litert`.
+- **`litert`**: `ElementType` builds with the MSVC bindings, whose C enums are
+  `int` rather than `unsigned int`.
+
 ## [0.3.0] — WASM (browser + server) support for `litert-sys` / `litert`
 
 First-class `wasm32-unknown-emscripten` target for the base TFLite inference
