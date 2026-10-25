@@ -41,6 +41,9 @@ dirs       = "5"
 bindgen    = "0.69"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
+cc         = "1"
+# 0.39: the newest that keeps the workspace's rust-version (0.40 needs 1.85).
+object     = { version = "0.39", default-features = false, features = ["read_core", "pe", "std"] }
 
 [profile.release]
 lto           = "thin"

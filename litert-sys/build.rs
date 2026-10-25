@@ -226,8 +226,81 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR env var missing"));
 
     emit_bindings(&target, &out_dir);
-    let lib_dir = locate_library(&target);
+    let lib_dir = match locate_library(&target) {
+        Some(dir) if target.ends_with("-windows-msvc") => {
+            Some(msvc_link_dir(&target, &dir, &out_dir))
+        }
+        other => other,
+    };
     emit_link_directives(&target, lib_dir.as_deref());
+}
+
+/// The directory MSVC links from. `link.exe` links a DLL through its import
+/// library, `LiteRt.lib` for `-lLiteRt`, and the prebuilts ship
+/// `libLiteRt.dll` without one: it is made here from the DLL's exports, with
+/// `lib.exe`, in `OUT_DIR`, and the DLLs of `lib_dir` are linked beside it.
+/// Cargo puts link search directories inside the target directory on `PATH`
+/// for `cargo run` and `cargo test`, so those find the DLLs too. A `lib_dir`
+/// without `libLiteRt.dll` (say, a local build in `LITERT_LIB_DIR` with an
+/// import library of its own) is used as is.
+fn msvc_link_dir(target: &str, lib_dir: &Path, out_dir: &Path) -> PathBuf {
+    let dll = "libLiteRt.dll";
+    if !lib_dir.join(dll).exists() {
+        return lib_dir.to_path_buf();
+    }
+    println!("cargo:rerun-if-changed={}", lib_dir.join(dll).display());
+    let dir = out_dir.join("msvc");
+    fs::create_dir_all(&dir).expect("create the MSVC link dir");
+    for entry in fs::read_dir(lib_dir).expect("read the LiteRT lib dir") {
+        let path = entry.expect("read the LiteRT lib dir").path();
+        if !path
+            .extension()
+            .is_some_and(|it| it.eq_ignore_ascii_case("dll"))
+        {
+            continue;
+        }
+        let linked = dir.join(path.file_name().expect("a DLL file name"));
+        let _ = fs::remove_file(&linked);
+        if fs::hard_link(&path, &linked).is_err() {
+            fs::copy(&path, &linked)
+                .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", path.display(), linked.display()));
+        }
+    }
+
+    let data = fs::read(dir.join(dll)).unwrap_or_else(|e| panic!("read {dll}: {e}"));
+    let exports = {
+        use object::Object;
+        object::read::pe::PeFile64::parse(&*data)
+            .and_then(|pe| pe.exports())
+            .unwrap_or_else(|e| panic!("read the exports of {dll}: {e}"))
+    };
+    let mut def = format!("LIBRARY {dll}\nEXPORTS\n");
+    for export in &exports {
+        let name = std::str::from_utf8(export.name()).expect("an ASCII export name");
+        def.push_str(&format!("    {name}\n"));
+    }
+    let def_path = dir.join("LiteRt.def");
+    fs::write(&def_path, def).expect("write LiteRt.def");
+
+    let machine = if target.starts_with("aarch64") {
+        "arm64"
+    } else {
+        "x64"
+    };
+    let mut lib = cc::windows_registry::find(target, "lib.exe")
+        .expect("MSVC's lib.exe, to make LiteRt.lib (install the Visual Studio C++ build tools)");
+    let status = lib
+        .arg("/nologo")
+        .arg(format!("/machine:{machine}"))
+        .arg(format!("/def:{}", def_path.display()))
+        .arg(format!("/out:{}", dir.join("LiteRt.lib").display()))
+        .status()
+        .expect("run lib.exe");
+    assert!(
+        status.success(),
+        "lib.exe failed to make LiteRt.lib: {status}"
+    );
+    dir
 }
 
 #[cfg(feature = "generate-bindings")]
@@ -642,8 +715,9 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
     if let Some(dir) = lib_dir {
         let dir = dir.display();
         println!("cargo:rustc-link-search=native={dir}");
-        if target != "wasm32-unknown-emscripten" {
-            // wasm-ld doesn't understand -rpath; emcc rejects it as well.
+        if target != "wasm32-unknown-emscripten" && !target.ends_with("-windows-msvc") {
+            // wasm-ld doesn't understand -rpath; emcc rejects it as well. MSVC's
+            // link.exe has no rpath either: Windows finds DLLs through PATH.
             println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
         }
         println!("cargo:lib_dir={dir}");
