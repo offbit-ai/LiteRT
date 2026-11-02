@@ -25,7 +25,7 @@ mod tensor_buffer;
 
 pub use compiled_model::{CompiledModel, SignatureIndex};
 pub use element_type::{ElementType, TensorElement};
-pub use environment::Environment;
+pub use environment::{Environment, EnvironmentOptions};
 pub use error::{Error, Result};
 pub use logging::{set_global_log_severity, LogSeverity};
 pub use model::Model;
